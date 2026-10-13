@@ -4,11 +4,18 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/draw"
+	_ "image/gif" // register GIF decoder
 	"image/jpeg"
+	_ "image/png" // register PNG decoder
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	_ "golang.org/x/image/bmp"  // register BMP decoder
+	_ "golang.org/x/image/tiff" // register TIFF decoder
+	_ "golang.org/x/image/webp" // register WebP decoder
 
 	"pdftoword/internal/ocr"
 
@@ -48,6 +55,73 @@ func Convert(pdfPath string, mode ConvertMode, progressFn func(float64)) (string
 	default:
 		return "", fmt.Errorf("unknown convert mode: %d", mode)
 	}
+}
+
+// ── Image file entry point ───────────────────────────────────────────────────
+
+// ConvertImage converts a single image file (JPG/PNG/BMP/GIF/TIFF/WebP) to a
+// DOCX. ModeImage embeds the image on one page; ModeText runs OCR on it.
+func ConvertImage(imgPath string, mode ConvertMode, progressFn func(float64)) (string, error) {
+	rgba, err := loadImage(imgPath)
+	if err != nil {
+		return "", err
+	}
+
+	switch mode {
+	case ModeImage:
+		jpgData, w, h, err := encodeJPEG(rgba)
+		if err != nil {
+			return "", fmt.Errorf("encode image: %w", err)
+		}
+
+		db := &docxBuilder{}
+		db.add(jpgData, w, h)
+
+		docxPath := outputPath(imgPath)
+		if err := saveDocx(docxPath, db); err != nil {
+			return "", fmt.Errorf("save docx: %w", err)
+		}
+		progressFn(1)
+		return docxPath, nil
+
+	case ModeText:
+		ocrEngine, err := initOCREngine()
+		if err != nil {
+			return "", fmt.Errorf("OCR is not available: %w", err)
+		}
+		defer ocrEngine.Release()
+
+		db := &textDocxBuilder{}
+		db.addPage(runOCRPage(ocrEngine, rgba))
+
+		docxPath := textOutputPath(imgPath)
+		if err := saveTextDocx(docxPath, db); err != nil {
+			return "", fmt.Errorf("save text docx: %w", err)
+		}
+		progressFn(1)
+		return docxPath, nil
+
+	default:
+		return "", fmt.Errorf("unknown convert mode: %d", mode)
+	}
+}
+
+// loadImage decodes an image file and returns it as RGBA.
+func loadImage(path string) (*image.RGBA, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open image: %w", err)
+	}
+	defer f.Close()
+
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
+	}
+
+	rgba := image.NewRGBA(src.Bounds())
+	draw.Draw(rgba, rgba.Bounds(), src, src.Bounds().Min, draw.Src)
+	return rgba, nil
 }
 
 // ── Image mode (screenshot) ─────────────────────────────────────────────────

@@ -24,6 +24,28 @@ type pdfFile struct {
 	name string
 }
 
+// supportedExts 列出所有可转换的文件扩展名（PDF + 常见图片格式）。
+var supportedExts = []string{
+	".pdf",
+	".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp",
+}
+
+// isSupportedFile 判断文件是否为可转换格式（扩展名不区分大小写）。
+func isSupportedFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	for _, e := range supportedExts {
+		if ext == e {
+			return true
+		}
+	}
+	return false
+}
+
+// isPDF 判断文件是否为 PDF。
+func isPDF(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".pdf")
+}
+
 func main() {
 	// 单实例锁——避免多个实例同时读写 preferences.json 导致 EOF 报错。
 	unlock, err := acquireSingleInstanceLock()
@@ -100,14 +122,18 @@ func main() {
 	updateCountLabel(countLabel, 0)
 
 	// status / output labels — defined early because addBtn / clearBtn closures reference them.
-	statusLabel := widget.NewLabel("请添加 PDF 文件")
+	statusLabel := widget.NewLabel("请添加 PDF 或图片文件")
 	statusLabel.Alignment = fyne.TextAlignCenter
 
 	outputLabel := widget.NewLabel("")
 	outputLabel.Wrapping = fyne.TextWrapBreak
 
-	addBtn := widget.NewButtonWithIcon("添加 PDF 文件", theme.FileIcon(), func() {
+	addBtn := widget.NewButtonWithIcon("添加文件", theme.FileIcon(), func() {
 		showFilePicker(w, &files, fileList, countLabel, convertBtn, converting, hasOutputMode, statusLabel, outputLabel)
+	})
+
+	addFolderBtn := widget.NewButtonWithIcon("添加文件夹", theme.FolderOpenIcon(), func() {
+		showFolderPicker(w, &files, fileList, countLabel, convertBtn, converting, hasOutputMode, statusLabel, outputLabel)
 	})
 
 	clearBtn := widget.NewButtonWithIcon("清空列表", theme.DeleteIcon(), func() {
@@ -115,12 +141,13 @@ func main() {
 		fileList.Refresh()
 		updateCountLabel(countLabel, 0)
 		updateConvertBtn(convertBtn, 0, converting, hasOutputMode())
-		statusLabel.SetText("请添加 PDF 文件")
+		statusLabel.SetText("请添加 PDF 或图片文件")
 		outputLabel.SetText("")
 		w.SetTitle("PDF2Word - PDF转Word工具")
 	})
 
-	topBar := container.NewBorder(nil, nil, addBtn, clearBtn, countLabel)
+	btnRow := container.NewHBox(addBtn, addFolderBtn)
+	topBar := container.NewBorder(nil, nil, btnRow, clearBtn, countLabel)
 
 	// ── bottom ──────────────────────────────────────────────────────
 	progressBar := widget.NewProgressBar()
@@ -176,9 +203,16 @@ func main() {
 
 				baseProgress := float64(i) / float64(total)
 
+				// Pick the right converter: PDF goes through pdfconv.Convert,
+				// image files go through pdfconv.ConvertImage.
+				convertFn := pdfconv.Convert
+				if !isPDF(f.path) {
+					convertFn = pdfconv.ConvertImage
+				}
+
 				// Screenshot (image) mode — always works.
 				if wantScreenshot {
-					if _, err := pdfconv.Convert(f.path, pdfconv.ModeImage, func(pct float64) {
+					if _, err := convertFn(f.path, pdfconv.ModeImage, func(pct float64) {
 						fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 					}); err != nil {
 						fyne.Do(func() {
@@ -187,9 +221,9 @@ func main() {
 					}
 				}
 
-				// Text mode — extract text, fall back to OCR for scans.
+				// Text mode — extract / OCR.
 				if wantText {
-					if _, err := pdfconv.Convert(f.path, pdfconv.ModeText, func(pct float64) {
+					if _, err := convertFn(f.path, pdfconv.ModeText, func(pct float64) {
 						fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 					}); err != nil {
 						fyne.Do(func() {
@@ -251,6 +285,79 @@ func main() {
 	w.ShowAndRun()
 }
 
+func showFolderPicker(w fyne.Window, files *[]pdfFile, fileList *widget.List, countLabel *widget.Label, convertBtn *widget.Button, converting bool, hasOutputMode func() bool, statusLabel *widget.Label, outputLabel *widget.Label) {
+	fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		if uri == nil {
+			return // cancelled
+		}
+
+		folderPath := uri.Path()
+		added := 0
+		skipped := 0
+
+		// Walk the selected folder (non-recursive by default).
+		entries, err := os.ReadDir(folderPath)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("无法读取文件夹: %w", err), w)
+			return
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if !isSupportedFile(entry.Name()) {
+				continue
+			}
+
+			filePath := filepath.Join(folderPath, entry.Name())
+
+			// dedup
+			dup := false
+			for _, f := range *files {
+				if f.path == filePath {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				skipped++
+				continue
+			}
+
+			*files = append(*files, pdfFile{path: filePath, name: entry.Name()})
+			added++
+		}
+
+		if added == 0 && skipped == 0 {
+			dialog.ShowInformation("未找到可转换文件", "该文件夹中没有 PDF 或图片文件", w)
+			return
+		}
+
+		fyne.Do(func() {
+			fileList.Refresh()
+			updateCountLabel(countLabel, len(*files))
+			updateConvertBtn(convertBtn, len(*files), converting, hasOutputMode())
+			statusLabel.SetText("请点击「开始转换」")
+			outputLabel.SetText("")
+			fileList.ScrollToBottom()
+		})
+
+		if skipped > 0 {
+			fyne.Do(func() {
+				dialog.ShowInformation("提示", fmt.Sprintf("已添加 %d 个文件，跳过 %d 个重复文件", added, skipped), w)
+			})
+		}
+	}, w)
+
+	fd.Show()
+	fd.Resize(fyne.NewSize(800, 600))
+}
+
 func showFilePicker(w fyne.Window, files *[]pdfFile, fileList *widget.List, countLabel *widget.Label, convertBtn *widget.Button, converting bool, hasOutputMode func() bool, statusLabel *widget.Label, outputLabel *widget.Label) {
 	fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 		if err != nil {
@@ -261,18 +368,18 @@ func showFilePicker(w fyne.Window, files *[]pdfFile, fileList *widget.List, coun
 			return // cancelled
 		}
 
-		pdfPath := reader.URI().Path()
+		filePath := reader.URI().Path()
 		reader.Close()
 
 		// dedup
 		for _, f := range *files {
-			if f.path == pdfPath {
+			if f.path == filePath {
 				dialog.ShowInformation("重复文件", "该文件已在列表中", w)
 				return
 			}
 		}
 
-		*files = append(*files, pdfFile{path: pdfPath, name: filepath.Base(pdfPath)})
+		*files = append(*files, pdfFile{path: filePath, name: filepath.Base(filePath)})
 
 		// OnClosed may fire from a non-UI goroutine; ensure widget
 		// updates happen on the Fyne canvas goroutine.
@@ -289,7 +396,7 @@ func showFilePicker(w fyne.Window, files *[]pdfFile, fileList *widget.List, coun
 		})
 	}, w)
 
-	fd.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+	fd.SetFilter(storage.NewExtensionFileFilter(supportedExts))
 	fd.Show()
 	fd.Resize(fyne.NewSize(800, 600))
 }
