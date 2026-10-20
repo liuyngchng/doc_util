@@ -14,6 +14,13 @@ type TextLine struct {
 	Confidence float32
 }
 
+// TextLineWithBox pairs a recognized text line with its detected bounding box.
+type TextLineWithBox struct {
+	Text       string
+	Confidence float32
+	Box        OCRBox
+}
+
 // PageText holds all recognized text lines for one page.
 type PageText struct {
 	Lines []TextLine

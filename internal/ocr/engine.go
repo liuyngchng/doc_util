@@ -101,8 +101,24 @@ func (e *Engine) Release() {
 	}
 }
 
-// Recognize runs the full OCR pipeline on a page image (RGBA).
+// Recognize runs the full OCR pipeline on a page image (RGBA) and returns
+// recognized text lines (without bounding boxes).
 func (e *Engine) Recognize(img *Mat) (*PageText, error) {
+	lines, err := e.RecognizeWithBoxes(img)
+	if err != nil {
+		return nil, err
+	}
+
+	var textLines []TextLine
+	for _, l := range lines {
+		textLines = append(textLines, TextLine{Text: l.Text, Confidence: l.Confidence})
+	}
+	return &PageText{Lines: textLines}, nil
+}
+
+// RecognizeWithBoxes runs the full OCR pipeline and returns each recognized
+// line paired with its detected bounding box (in original image pixels).
+func (e *Engine) RecognizeWithBoxes(img *Mat) ([]TextLineWithBox, error) {
 	// 1. Detection
 	detResult, err := DetPreprocess(
 		img,
@@ -133,14 +149,14 @@ func (e *Engine) Recognize(img *Mat) (*PageText, error) {
 	}
 
 	if len(boxes) == 0 {
-		return &PageText{}, nil
+		return nil, nil
 	}
 
 	// 3. Sort boxes
 	sortedBoxes := SortBoxesInReadingOrder(boxes)
 
 	// 4. Crop and recognize
-	var allLines []TextLine
+	var allLines []TextLineWithBox
 	for _, box := range sortedBoxes {
 		crop := cropBox(img, box)
 		if crop == nil {
@@ -162,12 +178,16 @@ func (e *Engine) Recognize(img *Mat) (*PageText, error) {
 		lines := CTCDecode(recOut, recShape, e.characterList)
 		for _, line := range lines {
 			if line.Confidence >= e.detConfig.RecScoreThresh {
-				allLines = append(allLines, line)
+				allLines = append(allLines, TextLineWithBox{
+					Text:       line.Text,
+					Confidence: line.Confidence,
+					Box:        box,
+				})
 			}
 		}
 	}
 
-	return &PageText{Lines: allLines}, nil
+	return allLines, nil
 }
 
 // cropBox crops a perspective-corrected region from the image for recognition.

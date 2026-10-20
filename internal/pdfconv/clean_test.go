@@ -1,6 +1,10 @@
 package pdfconv
 
-import "testing"
+import (
+	"testing"
+
+	"pdftoword/internal/ocr"
+)
 
 func TestCleanOCRLine(t *testing.T) {
 	tests := []struct {
@@ -91,6 +95,77 @@ func TestCleanOCRLine(t *testing.T) {
 			got := cleanOCRLine(tt.input)
 			if got != tt.want {
 				t.Errorf("cleanOCRLine(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseHotwords(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"empty", "", nil},
+		{"single word", "hello", []string{"hello"}},
+		{"comma separated", "hello,world,test", []string{"hello", "world", "test"}},
+		{"semicolon separated", "关键词1;关键词2", []string{"关键词1", "关键词2"}},
+		{"Chinese comma", "北京，上海，广州", []string{"北京", "上海", "广州"}},
+		{"newline", "word1\nword2\nword3", []string{"word1", "word2", "word3"}},
+		{"mixed delimiters", "hello;world,北京", []string{"hello", "world", "北京"}},
+		{"with spaces", " hello , world ", []string{"hello", "world"}},
+		{"empty parts", "hello,,world", []string{"hello", "world"}},
+		{"trailing comma", "hello,", []string{"hello"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseHotwords(tt.input)
+			if len(got) != len(tt.want) {
+				t.Errorf("ParseHotwords(%q) len = %d, want %d: %v", tt.input, len(got), len(tt.want), got)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("ParseHotwords(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFindHotwordInString(t *testing.T) {
+	// Create a simple OCRBox: a rectangle from (10,10) to (100,30)
+	box := ocr.OCRBox{
+		Points: [4]ocr.PointF{
+			{X: 10, Y: 10},
+			{X: 100, Y: 10},
+			{X: 100, Y: 30},
+			{X: 10, Y: 30},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		text    string
+		hotword string
+		want    int // expected number of matches
+	}{
+		{"exact match", "Hello World", "World", 1},
+		{"no match", "Hello World", "xyz", 0},
+		{"case insensitive", "HELLO", "hello", 1},
+		{"Chinese", "你好世界", "世界", 1},
+		{"multiple matches", "test test test", "test", 3},
+		{"empty hotword", "text", "", 0},
+		{"empty text", "", "test", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := findHotwordInString(tt.text, tt.hotword, box)
+			if len(results) != tt.want {
+				t.Errorf("findHotwordInString(%q, %q) match count = %d, want %d",
+					tt.text, tt.hotword, len(results), tt.want)
 			}
 		})
 	}

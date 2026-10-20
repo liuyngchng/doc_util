@@ -80,6 +80,7 @@ func main() {
 	var convertBtn *widget.Button
 	var screenshotCheck *widget.Check
 	var textCheck *widget.Check
+	var hotwordsEntry *widget.Entry
 
 	// ── OCR model detection (for hint text only) ────────────────────
 	baseDir, _ := os.Getwd()
@@ -157,12 +158,34 @@ func main() {
 	screenshotCheck = widget.NewCheck("生成截图版 (.docx)", func(enabled bool) {
 		prefs.SetBool("screenshotMode", enabled)
 		updateConvertBtn(convertBtn, len(files), converting, hasOutputMode())
+		if hotwordsEntry != nil {
+			if enabled {
+				hotwordsEntry.Enable()
+			} else {
+				hotwordsEntry.Disable()
+			}
+		}
 	})
 
 	textCheck = widget.NewCheck("生成文字版 (.text.docx)", func(enabled bool) {
 		prefs.SetBool("textMode", enabled)
 		updateConvertBtn(convertBtn, len(files), converting, hasOutputMode())
 	})
+
+	hotwordsEntry = widget.NewEntry()
+	hotwordsEntry.SetPlaceHolder("热词（用逗号、分号或换行分隔）")
+	hotwordsEntry.MultiLine = true
+	hotwordsEntry.Wrapping = fyne.TextWrapBreak
+	hotwordsEntry.SetMinRowsVisible(2)
+	hotwordsEntry.OnChanged = func(s string) {
+		prefs.SetString("hotwords", s)
+	}
+	hotwordLabel := widget.NewLabel("截图版热词标注（红色下划线）：")
+	hotwordRow := container.NewBorder(
+		container.NewVBox(hotwordLabel),
+		nil, nil, nil,
+		hotwordsEntry,
+	)
 
 	var textHint *widget.Label
 	if modelsExist {
@@ -173,6 +196,7 @@ func main() {
 
 	modeRow := container.NewVBox(
 		container.NewHBox(screenshotCheck),
+		hotwordRow,
 		container.NewHBox(textCheck, textHint),
 	)
 
@@ -184,6 +208,7 @@ func main() {
 		updateConvertBtn(convertBtn, len(files), converting, hasOutputMode())
 		screenshotCheck.Disable()
 		textCheck.Disable()
+		hotwordsEntry.Disable()
 
 		progressBar.Show()
 		progressBar.SetValue(0)
@@ -191,6 +216,7 @@ func main() {
 
 		wantScreenshot := screenshotCheck.Checked
 		wantText := textCheck.Checked
+		hotwords := pdfconv.ParseHotwords(hotwordsEntry.Text)
 
 		go func() {
 			var results []string
@@ -203,18 +229,23 @@ func main() {
 
 				baseProgress := float64(i) / float64(total)
 
-				// Pick the right converter: PDF goes through pdfconv.Convert,
-				// image files go through pdfconv.ConvertImage.
-				convertFn := pdfconv.Convert
-				if !isPDF(f.path) {
-					convertFn = pdfconv.ConvertImage
-				}
-
 				// Screenshot (image) mode — always works.
 				if wantScreenshot {
-					if _, err := convertFn(f.path, pdfconv.ModeImage, func(pct float64) {
-						fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
-					}); err != nil {
+					var err error
+					if len(hotwords) > 0 && isPDF(f.path) {
+						_, err = pdfconv.ConvertWithHotwords(f.path, pdfconv.ModeImage, hotwords, func(pct float64) {
+							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
+						})
+					} else if len(hotwords) > 0 && !isPDF(f.path) {
+						_, err = pdfconv.ConvertImageWithHotwords(f.path, pdfconv.ModeImage, hotwords, func(pct float64) {
+							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
+						})
+					} else {
+						_, err = pdfconv.Convert(f.path, pdfconv.ModeImage, func(pct float64) {
+							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
+						})
+					}
+					if err != nil {
 						fyne.Do(func() {
 							dialog.ShowError(fmt.Errorf("截图版转换 %s 失败: %w", f.name, err), w)
 						})
@@ -223,7 +254,7 @@ func main() {
 
 				// Text mode — extract / OCR.
 				if wantText {
-					if _, err := convertFn(f.path, pdfconv.ModeText, func(pct float64) {
+					if _, err := pdfconv.Convert(f.path, pdfconv.ModeText, func(pct float64) {
 						fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 					}); err != nil {
 						fyne.Do(func() {
@@ -252,6 +283,9 @@ func main() {
 				converting = false
 				screenshotCheck.Enable()
 				textCheck.Enable()
+				if screenshotCheck.Checked {
+					hotwordsEntry.Enable()
+				}
 				updateConvertBtn(convertBtn, len(files), converting, hasOutputMode())
 			})
 		}()
@@ -262,6 +296,10 @@ func main() {
 	// updateConvertBtn 会拿到 nil 的 convertBtn）。
 	screenshotCheck.SetChecked(prefs.BoolWithFallback("screenshotMode", false))
 	textCheck.SetChecked(prefs.BoolWithFallback("textMode", true))
+	hotwordsEntry.SetText(prefs.StringWithFallback("hotwords", ""))
+	if !screenshotCheck.Checked {
+		hotwordsEntry.Disable()
+	}
 
 	convertBar := container.NewVBox(
 		statusLabel,

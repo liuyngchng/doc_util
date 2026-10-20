@@ -20,6 +20,7 @@ import (
 func main() {
 	mode := pdfconv.ModeImage
 	var pdfPath string
+	var hotwordsArg string
 
 	for _, arg := range os.Args[1:] {
 		switch arg {
@@ -28,12 +29,14 @@ func main() {
 			mode = pdfconv.ModeText
 		case "--mode":
 			// Consumed below via positional check.
+		case "--hotwords":
+			// Consumed below via positional check.
 		default:
 			pdfPath = arg
 		}
 	}
 
-	// Check for --mode <value> in args.
+	// Check for --mode <value> and --hotwords <value> in args.
 	for i := 1; i < len(os.Args); i++ {
 		if os.Args[i] == "--mode" && i+1 < len(os.Args) {
 			switch os.Args[i+1] {
@@ -45,34 +48,40 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Unknown mode: %s (valid: image, text)\n", os.Args[i+1])
 				os.Exit(1)
 			}
-			break
+		}
+		if os.Args[i] == "--hotwords" && i+1 < len(os.Args) {
+			hotwordsArg = os.Args[i+1]
 		}
 	}
 
 	if pdfPath == "" {
-		fmt.Fprintf(os.Stderr, "Usage: pdftoword-cli [--mode image|text] [--ocr] <pdf_file>\n")
+		fmt.Fprintf(os.Stderr, "Usage: pdftoword-cli [--mode image|text] [--hotwords <w1,w2,...>] [--ocr] <pdf_file>\n")
 		os.Exit(1)
 	}
+
+	hotwords := pdfconv.ParseHotwords(hotwordsArg)
 
 	modeLabel := "image"
 	if mode == pdfconv.ModeText {
 		modeLabel = "text"
 	}
-	fmt.Printf("Converting: %s (mode: %s)\n", pdfPath, modeLabel)
+	fmt.Printf("Converting: %s (mode: %s)", pdfPath, modeLabel)
+	if len(hotwords) > 0 {
+		fmt.Printf(", hotwords: %v", hotwords)
+	}
+	fmt.Println()
 
-	docxPath, err := pdfconv.Convert(pdfPath, mode, func(pct float64) {
-		const barWidth = 40
-		filled := int(pct * float64(barWidth))
-		bar := ""
-		for i := 0; i < barWidth; i++ {
-			if i < filled {
-				bar += "="
-			} else {
-				bar += "-"
-			}
-		}
-		fmt.Printf("\r[%s] %.0f%%", bar, pct*100)
-	})
+	var docxPath string
+	var err error
+	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
+		docxPath, err = pdfconv.ConvertWithHotwords(pdfPath, mode, hotwords, func(pct float64) {
+			showProgress(pct)
+		})
+	} else {
+		docxPath, err = pdfconv.Convert(pdfPath, mode, func(pct float64) {
+			showProgress(pct)
+		})
+	}
 	fmt.Println()
 
 	if err != nil {
@@ -81,4 +90,18 @@ func main() {
 	}
 
 	fmt.Printf("Done: %s\n", docxPath)
+}
+
+func showProgress(pct float64) {
+	const barWidth = 40
+	filled := int(pct * float64(barWidth))
+	bar := ""
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "="
+		} else {
+			bar += "-"
+		}
+	}
+	fmt.Printf("\r[%s] %.0f%%", bar, pct*100)
 }

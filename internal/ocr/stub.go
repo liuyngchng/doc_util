@@ -27,8 +27,11 @@ func NewEngine(modelsDir string) (*Engine, error) { return nil, errNoOCR }
 func NewEngineWithConfig(modelsDir string, cfg PaddleOCRConfig) (*Engine, error) {
 	return nil, errNoOCR
 }
-func (e *Engine) Recognize(img *Mat) (*PageText, error) { return nil, errNoOCR }
-func (e *Engine) Release()                              {}
+func (e *Engine) Recognize(img *Mat) (*PageText, error)      { return nil, errNoOCR }
+func (e *Engine) RecognizeWithBoxes(img *Mat) ([]TextLineWithBox, error) {
+	return nil, errNoOCR
+}
+func (e *Engine) Release() {}
 
 // PaddleOCRConfig is the stub config type.
 type PaddleOCRConfig struct {

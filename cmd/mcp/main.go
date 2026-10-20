@@ -266,6 +266,10 @@ func fileArgsSchema() inputSchema {
 			"type":        "string",
 			"description": "Optional absolute path where the generated DOCX should be written. If omitted, the DOCX is returned as base64 in file_data.",
 		},
+		"hotwords": map[string]any{
+			"type":        "string",
+			"description": "Optional, image mode only. A list of hotwords to annotate with a red underline, separated by commas, semicolons, or newlines.",
+		},
 	}
 	return inputSchema{Type: "object", Properties: props}
 }
@@ -308,6 +312,7 @@ type convertArgs struct {
 	FilePath   string `json:"file_path"`
 	FileData   string `json:"file_data"`
 	OutputPath string `json:"output_path"`
+	Hotwords   string `json:"hotwords"`
 }
 
 func handleToolsCall(ctx context.Context, req rpcRequest) rpcResponse {
@@ -405,7 +410,13 @@ func convert(ctx context.Context, mode pdfconv.ConvertMode, args convertArgs) (s
 	}
 
 	// Convert.
-	docxPath, err := pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
+	hotwords := pdfconv.ParseHotwords(args.Hotwords)
+	var docxPath string
+	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
+		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp.Name(), mode, hotwords, func(pct float64) {})
+	} else {
+		docxPath, err = pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
+	}
 	if err != nil {
 		return "", fmt.Errorf("convert: %w", err)
 	}

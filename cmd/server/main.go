@@ -89,14 +89,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConvertImage(w http.ResponseWriter, r *http.Request) {
-	convertAndServe(w, r, pdfconv.ModeImage)
+	hotwords := pdfconv.ParseHotwords(r.FormValue("hotwords"))
+	slog.Info("conversion started with hotwords", "hotwords_count", len(hotwords), "hotwords", hotwords)
+	convertAndServe(w, r, pdfconv.ModeImage, hotwords)
 }
 
 func handleConvertText(w http.ResponseWriter, r *http.Request) {
-	convertAndServe(w, r, pdfconv.ModeText)
+	convertAndServe(w, r, pdfconv.ModeText, nil)
 }
 
-func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.ConvertMode) {
+func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.ConvertMode, hotwords []string) {
 	// Limit upload to 64 MB.
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
@@ -139,7 +141,12 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 
 	// Convert.
 	convStart := time.Now()
-	docxPath, err := pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
+	var docxPath string
+	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
+		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp.Name(), mode, hotwords, func(pct float64) {})
+	} else {
+		docxPath, err = pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
+	}
 	convDuration := time.Since(convStart)
 
 	if err != nil {
