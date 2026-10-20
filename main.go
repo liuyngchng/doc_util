@@ -204,6 +204,29 @@ func main() {
 		if len(files) == 0 || !hasOutputMode() {
 			return
 		}
+
+		// Check: image files + hotwords + no OCR model → warn the user.
+		hotwords := pdfconv.ParseHotwords(hotwordsEntry.Text)
+		if len(hotwords) > 0 && !modelsExist {
+			hasImage := false
+			for _, f := range files {
+				if !isPDF(f.path) {
+					hasImage = true
+					break
+				}
+			}
+			if hasImage {
+				dialog.ShowInformation(
+					"热词标注不可用",
+					"文件列表中包含图片文件（非 PDF）。\n\n"+
+						"图片文件的热词标注需要 OCR 模型，但当前未检测到 OCR 模型目录（models/）。\n\n"+
+						"请先安装 OCR 模型，或从列表中移除图片文件后重试。",
+					w,
+				)
+				return
+			}
+		}
+
 		converting = true
 		updateConvertBtn(convertBtn, len(files), converting, hasOutputMode())
 		screenshotCheck.Disable()
@@ -216,7 +239,6 @@ func main() {
 
 		wantScreenshot := screenshotCheck.Checked
 		wantText := textCheck.Checked
-		hotwords := pdfconv.ParseHotwords(hotwordsEntry.Text)
 
 		go func() {
 			var results []string
