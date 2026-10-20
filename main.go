@@ -349,7 +349,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		a.Quit()
+		fyne.Do(func() { a.Quit() })
 	}()
 
 	w.ShowAndRun()
