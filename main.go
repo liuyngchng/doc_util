@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -342,6 +344,14 @@ func main() {
 	w.SetContent(content)
 	w.Resize(fyne.NewSize(800, 600))
 	w.CenterOnScreen()
+	// 监听 SIGINT (Ctrl+C) / SIGTERM，支持从终端优雅退出
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		a.Quit()
+	}()
+
 	w.ShowAndRun()
 }
 
