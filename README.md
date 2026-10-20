@@ -4,6 +4,8 @@
 
 **新功能**：可选 OCR 扩展——启用后同时生成一份纯文字版 `.ocr.docx`，方便搜索和复制文本。
 
+**新功能（v1.1）**：截图版支持**热词红线标注**——用户指定关键词，转换时自动在截图版 DOCX 中用红色下划线标出这些词。有文字层的 PDF 用 MuPDF 定位（快），扫描件和图片文件用 OCR 定位（需 OCR 模型）。
+
 ## 运行环境要求
 
 | 模式 | 依赖 |
@@ -167,7 +169,7 @@ models/
 1. 运行 `./pdf2docx`（Linux）或 `pdf2docx.exe`（Windows）
 2. 弹出文件选择对话框，选一个或多个 PDF 文件
 3. 勾选输出类型（至少选一个，选择会自动记忆，下次打开无需重选）：
-   - **生成截图版 (.docx)** — 每页渲染为图片嵌入 Word
+   - **生成截图版 (.docx)** — 每页渲染为图片嵌入 Word。勾选后下方出现热词输入框，可填入需要红色下划线标注的关键词（多个词用逗号/分号/换行分隔）。
    - **生成文字版 (.text.docx)** — 提取文字（有文字层的 PDF 直接提取；扫描件需 OCR，仅 Linux 版支持）
 4. 点击"开始转换"
 5. 同目录下生成对应的 `.docx` / `.text.docx` 文件，用 Word / WPS 打开
@@ -180,6 +182,9 @@ models/
 
 # 文字版
 ./pdf2docx-cli --mode text input.pdf
+
+# 截图版 + 热词红线标注
+./pdf2docx-cli --hotwords "关键词1,关键词2,关键词3" input.pdf
 ```
 
 ### Server
@@ -193,6 +198,12 @@ PORT=8080 ./pdf2docx-server
 # 截图版 DOCX
 curl -X POST http://localhost:8080/convert/image \
   -F "file=@input.pdf" \
+  -o output.docx
+
+# 截图版 DOCX（带热词标注）
+curl -X POST http://localhost:8080/convert/image \
+  -F "file=@input.pdf" \
+  -F "hotwords=关键词1,关键词2,关键词3" \
   -o output.docx
 
 # 文字版 DOCX
