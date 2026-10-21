@@ -1,4 +1,4 @@
-# pdf2docx
+# docutil
 
 将 PDF 逐页渲染为图片，并嵌入 Word 文档的桌面工具。适合在 Word 中像翻页一样逐页阅读 PDF 内容（尤其是扫描件）。
 
@@ -43,14 +43,14 @@ OCR 版启动后，如果 GUI 检测到 `models/` 目录（含 `det/inference.on
 
 | 文件 | 平台 | 说明 |
 |------|------|------|
-| `pdf2docx` | Linux amd64 | GUI 桌面版（含 OCR 支持） |
-| `pdf2docx.exe` | Windows amd64 | GUI 桌面版（交叉编译，含 MuPDF 文本提取，无 OCR） |
+| `docutil` | Linux amd64 | GUI 桌面版（含 OCR 支持） |
+| `docutil.exe` | Windows amd64 | GUI 桌面版（交叉编译，含 MuPDF 文本提取，无 OCR） |
 | `libonnxruntime.so` | Linux amd64 | ONNX Runtime 运行时（OCR 版附带） |
 | `models/` | — | OCR 模型目录（OCR 版附带） |
 
-Server 版通过 `./scripts/build_server.sh` 构建生产 Docker 镜像 `pdf2docx-server:latest`。
+Server 版通过 `./scripts/build_server.sh` 构建生产 Docker 镜像 `docutil-server:latest`。
 
-MCP Server 版通过 `./scripts/build_mcp.sh` 构建生产 Docker 镜像 `pdf2docx-mcp:latest`。
+MCP Server 版通过 `./scripts/build_mcp.sh` 构建生产 Docker 镜像 `docutil-mcp:latest`。
 
 Linux 构建始终集成 OCR（OpenCV + ONNX Runtime），产出含 .so 库和 models/ 的完整包。
 Windows 交叉编译使用 `-tags noocr`（不支持 Windows OCR 交叉编译），但 MuPDF 文本提取始终可用，
@@ -79,16 +79,16 @@ scripts\build.bat
 scripts\build.bat --proxy http://your_proxoy_host:your_proxy_port
 ```
 
-产出 `dist\pdf2docx-windows-amd64-ocr.zip`，包含：
+产出 `dist\docutil-windows-amd64-ocr.zip`，包含：
 
 | 文件 | 说明 |
 |------|------|
-| `pdf2docx.exe` | 原生 Windows GUI（含 OCR 支持） |
+| `docutil.exe` | 原生 Windows GUI（含 OCR 支持） |
 | `onnxruntime.dll` | ONNX Runtime 运行时 |
 | `libopencv_core*.dll` 等 | OpenCV 运行时（自动收集依赖） |
 | `models/` | OCR 模型目录 |
 
-**最终用户不需要安装 MSYS2**，解压 zip 双击 `pdf2docx.exe` 即可使用 OCR 功能。
+**最终用户不需要安装 MSYS2**，解压 zip 双击 `docutil.exe` 即可使用 OCR 功能。
 
 构建默认使用 [garble](https://github.com/burrowers/garble) 对 Windows 交叉编译的模块内代码做符号名和字符串字面量混淆（依赖不变）。Linux OCR 构建不使用 garble（CGO/OCR 与 garble 不兼容）。如果不需要混淆：
 
@@ -106,10 +106,10 @@ scripts\build.bat --proxy http://your_proxoy_host:your_proxy_port
 
 ```bash
 # 纯 Go 命令行版本（CGO_ENABLED=0，无 OCR，静态链接）
-CGO_ENABLED=0 go build -tags noocr -o pdf2docx-cli ./cmd/cli/
+CGO_ENABLED=0 go build -tags noocr -o docutil-cli ./cmd/cli/
 
 # 带 OCR 的命令行版本（CGO_ENABLED=1）
-CGO_ENABLED=1 go build -o pdf2docx-cli ./cmd/cli/
+CGO_ENABLED=1 go build -o docutil-cli ./cmd/cli/
 ```
 
 Server：
@@ -128,14 +128,14 @@ Server：
 
 ```bash
 # 首次：构建开发镜像
-docker build -t pdf2docx_build:latest -f scripts/Dockerfile .
+docker build -t docutil_build:latest -f scripts/Dockerfile .
 
 # 进入开发容器
 ./scripts/dev.sh
 
 # 容器内可执行：
 go build ./internal/ocr/          # 编译 OCR 包
-go build -o dist/pdf2docx .       # 编译 GUI
+go build -o dist/docutil .       # 编译 GUI
 go vet ./internal/...             # 静态检查
 ```
 
@@ -166,7 +166,7 @@ models/
 
 ### GUI
 
-1. 运行 `./pdf2docx`（Linux）或 `pdf2docx.exe`（Windows）
+1. 运行 `./docutil`（Linux）或 `docutil.exe`（Windows）
 2. 弹出文件选择对话框，选一个或多个 PDF 文件
 3. 勾选输出类型（至少选一个，选择会自动记忆，下次打开无需重选）：
    - **生成截图版 (.docx)** — 每页渲染为图片嵌入 Word。勾选后下方出现热词输入框，可填入需要红色下划线标注的关键词（多个词用逗号/分号/换行分隔）。
@@ -178,13 +178,13 @@ models/
 
 ```bash
 # 基础转换（截图版）
-./pdf2docx-cli input.pdf
+./docutil-cli input.pdf
 
 # 文字版
-./pdf2docx-cli --mode text input.pdf
+./docutil-cli --mode text input.pdf
 
 # 截图版 + 热词红线标注
-./pdf2docx-cli --hotwords "关键词1,关键词2,关键词3" input.pdf
+./docutil-cli --hotwords "关键词1,关键词2,关键词3" input.pdf
 ```
 
 ### Server
@@ -193,7 +193,7 @@ Server 提供三个接口，支持 PDF 和 DOCX 输入：
 
 ```bash
 # 启动服务
-PORT=8080 ./pdf2docx-server
+PORT=8080 ./docutil-server
 
 # 截图版 DOCX
 curl -X POST http://localhost:8080/convert/image \
@@ -238,8 +238,8 @@ Claude Desktop、Cline 等 MCP 客户端直接调用（让 LLM 直接转换 PDF�
 ```json
 {
   "mcpServers": {
-    "pdf2docx": {
-      "command": "/path/to/pdf2docx-mcp"
+    "docutil": {
+      "command": "/path/to/docutil-mcp"
     }
   }
 }
@@ -250,9 +250,9 @@ Claude Desktop、Cline 等 MCP 客户端直接调用（让 LLM 直接转换 PDF�
 ```json
 {
   "mcpServers": {
-    "pdf2docx": {
+    "docutil": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "pdf2docx-mcp:latest"]
+      "args": ["run", "-i", "--rm", "docutil-mcp:latest"]
     }
   }
 }
@@ -265,17 +265,17 @@ ubuntu:24.04
   └─ 安装 gcc + g++ + MinGW-w64 + X11/GL/Wayland 开发头文件
        + libopencv-dev + patchelf + Go toolchain
        └─ go mod download（模块缓存，挂载外部 volume 复用）
-            ├─ CGO_ENABLED=1 GOOS=linux   → pdf2docx（ELF，含 OCR）
+            ├─ CGO_ENABLED=1 GOOS=linux   → docutil（ELF，含 OCR）
             │     └─ 链接 libopencv_core + libopencv_imgproc + libonnxruntime
             └─ CGO_ENABLED=1 GOOS=windows
-               CC=x86_64-w64-mingw32-gcc  → pdf2docx.exe（PE32+）
+               CC=x86_64-w64-mingw32-gcc  → docutil.exe（PE32+）
                （Windows 版使用 -tags noocr，无 OCR，但含 MuPDF 文本提取）
 
 Windows OCR 版需在 Windows 上通过 scripts/build.bat 使用 MSYS2 MinGW-w64 原生编译：
   MSYS2 UCRT64 (Windows)
     ├─ pacman 安装 mingw-w64-ucrt-x86_64-go/gcc/opencv
     ├─ 下载 onnxruntime Windows 预编译包 → gendef + dlltool 生成 MinGW 导入库
-    ├─ CGO_ENABLED=1 GOOS=windows → pdf2docx.exe（PE32+，含 OCR）
+    ├─ CGO_ENABLED=1 GOOS=windows → docutil.exe（PE32+，含 OCR）
     └─ 收集 DLL + models/ → zip 分发包
 
 MuPDF 静态库由 go-fitz 内置提供（libmupdf_linux_amd64.a / libmupdf_windows_amd64.a），
@@ -285,7 +285,7 @@ MuPDF 静态库由 go-fitz 内置提供（libmupdf_linux_amd64.a / libmupdf_wind
 ## 项目结构
 
 ```
-pdf2docx/
+docutil/
 ├── main.go                     # Fyne GUI 入口
 ├── scripts/
 │   ├── Dockerfile              # 编译镜像（ubuntu:24.04 + Go + OpenCV + ONNX Runtime）
@@ -339,9 +339,9 @@ pdf2docx/
 直接将 `dist/` 下的 tar 包解压到目标 Linux 机器即可运行：
 
 ```bash
-tar -xf pdf2docx-linux-amd64.tar
-cd pdf2docx-linux-amd64/
-./pdf2docx
+tar -xf docutil-linux-amd64.tar
+cd docutil-linux-amd64/
+./docutil
 ```
 
 目标机器需要：
@@ -360,7 +360,7 @@ cd pdf2docx-linux-amd64/
 直接运行 Docker 镜像：
 
 ```bash
-docker run -p 8080:8080 pdf2docx-server:latest
+docker run -p 8080:8080 docutil-server:latest
 ```
 
 ### MCP Server
@@ -374,8 +374,8 @@ MCP Server 通过 stdio 通信，作为子进程被 MCP 客户端拉起，无需
    ```json
    {
      "mcpServers": {
-       "pdf2docx": {
-         "command": "/path/to/pdf2docx-mcp"
+       "docutil": {
+         "command": "/path/to/docutil-mcp"
        }
      }
    }
@@ -386,9 +386,9 @@ MCP Server 通过 stdio 通信，作为子进程被 MCP 客户端拉起，无需
    ```json
    {
      "mcpServers": {
-       "pdf2docx": {
+       "docutil": {
          "command": "docker",
-         "args": ["run", "-i", "--rm", "-v", "/tmp:/tmp", "pdf2docx-mcp:latest"]
+         "args": ["run", "-i", "--rm", "-v", "/tmp:/tmp", "docutil-mcp:latest"]
        }
      }
    }

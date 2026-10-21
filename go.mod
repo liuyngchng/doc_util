@@ -1,4 +1,4 @@
-module pdftoword
+module docutil
 
 go 1.24.0
 

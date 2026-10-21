@@ -22,7 +22,7 @@
 ```
 
 - OCR 版依赖 CGO + OpenCV + ONNX Runtime，编译脚本会自动构建/使用
-  `pdf2docx_build:latest` 镜像（`scripts/Dockerfile`）。
+  `docutil_build:latest` 镜像（`scripts/Dockerfile`）。
 - 若只想验证纯 Go 逻辑（不含 CGO/OCR），可用 `CGO_ENABLED=0 go build -tags noocr ...`，
   但 `internal/ocr` 包本身仍需要容器环境才能完整编译。
 

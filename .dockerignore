@@ -30,10 +30,10 @@ certs
 # 构建产物（server/MCP 镜像只需要 dist/ 下的 server 二进制、onnxruntime、models）
 vendor
 dist/*.tar
-dist/pdf2docx
-dist/pdf2docx.exe
-dist/pdf2docx-linux-amd64/
-dist/pdf2docx-windows-amd64/
+dist/docutil
+dist/docutil.exe
+dist/docutil-linux-amd64/
+dist/docutil-windows-amd64/
 dist/libopencv_*.so.*
 dist/libtbb.so*
 

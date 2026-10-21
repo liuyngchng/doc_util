@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 :: ================================================================
 :: build.bat - Windows OCR build script
 ::
-:: Build pdf2docx.exe with OCR support on Windows.
+:: Build docutil.exe with OCR support on Windows.
 :: Requires MSYS2 (https://www.msys2.org/).
 ::
 :: After installing MSYS2, open "MSYS2 UCRT64" terminal, run once:
@@ -236,32 +236,32 @@ echo [OK] onnxruntime MinGW import lib ready.
 
 :: --- Build ---
 echo.
-echo === Step 3: Build pdf2docx.exe (Windows OCR) ===
+echo === Step 3: Build docutil.exe (Windows OCR) ===
 
 mkdir dist 2>nul
 
-"%BASH%" -lc "cd $(cygpath '%ROOT_DIR%') && export PATH=/ucrt64/bin:\$PATH && %BASH_PROXY%export GOROOT=/ucrt64/lib/go && export CGO_ENABLED=1 && export GOOS=windows && export GOARCH=amd64 && export GOPROXY=https://goproxy.cn,direct && export CGO_CXXFLAGS='-std=c++17' && echo '  Building...' && go build -mod=mod -ldflags='-s -w -H windowsgui' -o dist/pdf2docx.exe . && echo '  Build OK.'"
+"%BASH%" -lc "cd $(cygpath '%ROOT_DIR%') && export PATH=/ucrt64/bin:\$PATH && %BASH_PROXY%export GOROOT=/ucrt64/lib/go && export CGO_ENABLED=1 && export GOOS=windows && export GOARCH=amd64 && export GOPROXY=https://goproxy.cn,direct && export CGO_CXXFLAGS='-std=c++17' && echo '  Building...' && go build -mod=mod -ldflags='-s -w -H windowsgui' -o dist/docutil.exe . && echo '  Build OK.'"
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Build failed.
     exit /b 1
 )
 
-echo [OK] pdf2docx.exe built.
+echo [OK] docutil.exe built.
 
 :: --- Collect DLLs ---
 echo.
 echo === Step 4: Collect DLL dependencies ===
 
 set "DIST_DIR=%ROOT_DIR%dist"
-set "PKG_DIR=%DIST_DIR%\pdf2docx-windows-amd64"
+set "PKG_DIR=%DIST_DIR%\docutil-windows-amd64"
 
 :: Clean old directory
 if exist "%PKG_DIR%" rmdir /S /Q "%PKG_DIR%"
 mkdir "%PKG_DIR%"
 
 :: Copy exe
-copy /Y "%DIST_DIR%\pdf2docx.exe" "%PKG_DIR%\" >nul
+copy /Y "%DIST_DIR%\docutil.exe" "%PKG_DIR%\" >nul
 
 :: Use MSYS2 bash + ldd to find required DLLs
 echo   Finding DLL dependencies...
@@ -279,7 +279,7 @@ echo   models/ copied.
 echo.
 echo === Step 5: Package ===
 
-set "ZIP_NAME=%DIST_DIR%\pdf2docx-windows-amd64-ocr.zip"
+set "ZIP_NAME=%DIST_DIR%\docutil-windows-amd64-ocr.zip"
 if exist "%ZIP_NAME%" del /Q "%ZIP_NAME%"
 
 powershell -Command "& { Compress-Archive -Path '%PKG_DIR%\*' -DestinationPath '%ZIP_NAME%' -Force; }"
@@ -298,11 +298,11 @@ echo Build complete!
 echo   Output: %ZIP_NAME%  (~%ZIP_SIZE_MB% MB)
 echo.
 echo Contents:
-echo   pdf2docx.exe
+echo   docutil.exe
 echo   models/ (OCR models)
 echo   *.dll (runtime libraries)
 echo.
-echo Extract to same directory, then run pdf2docx.exe to use OCR.
+echo Extract to same directory, then run docutil.exe to use OCR.
 echo ================================================================
 
 :: Clean up intermediate directory (zip is the final artifact)

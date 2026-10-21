@@ -18,9 +18,9 @@ import (
 	_ "golang.org/x/image/tiff" // register TIFF decoder
 	_ "golang.org/x/image/webp" // register WebP decoder
 
-	"pdftoword/internal/drawutil"
-	"pdftoword/internal/htmlpos"
-	"pdftoword/internal/ocr"
+	"docutil/internal/drawutil"
+	"docutil/internal/htmlpos"
+	"docutil/internal/ocr"
 
 	"github.com/gen2brain/go-fitz"
 )

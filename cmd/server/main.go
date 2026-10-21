@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"pdftoword/internal/pdfconv"
+	"docutil/internal/pdfconv"
 )
 
 func main() {
@@ -254,7 +254,7 @@ func saveUpload(w http.ResponseWriter, r *http.Request) (tmpPath, filename strin
 	if ext == "" {
 		ext = ".tmp"
 	}
-	tmp, err := os.CreateTemp("", "pdf2docx-*"+ext)
+	tmp, err := os.CreateTemp("", "docutil-*"+ext)
 	if err != nil {
 		slog.Error("create temp file failed", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

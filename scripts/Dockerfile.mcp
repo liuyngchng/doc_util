@@ -1,5 +1,5 @@
 # ================================================================
-# Production Docker image for the pdf2docx MCP server.
+# Production Docker image for the docutil MCP server.
 #
 # This image only packages a PRE-BUILT binary from dist/ — it does NOT
 # compile. Build the binary first (inside Docker) then build the image:
@@ -7,14 +7,14 @@
 #   ./scripts/build_mcp.sh                  # builds binary + image in one go
 #
 # Run (note: stdin must be attached, and stdout is the JSON-RPC transport):
-#   docker run -i --rm pdf2docx-mcp:latest
+#   docker run -i --rm docutil-mcp:latest
 #
 # Register in Claude Desktop's claude_desktop_config.json:
 #   {
 #     "mcpServers": {
-#       "pdf2docx": {
+#       "docutil": {
 #         "command": "docker",
-#         "args": ["run", "-i", "--rm", "pdf2docx-mcp:latest"]
+#         "args": ["run", "-i", "--rm", "docutil-mcp:latest"]
 #       }
 #     }
 #   }
@@ -45,10 +45,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Pre-built binary + ONNX Runtime shared lib + OCR models.
-COPY dist/pdf2docx-mcp /app/pdf2docx-mcp
+COPY dist/docutil-mcp /app/docutil-mcp
 COPY dist/libonnxruntime.so* /app/
 COPY dist/models /app/models
 
 ENV LOG_LEVEL=info
 
-ENTRYPOINT ["/app/pdf2docx-mcp"]
+ENTRYPOINT ["/app/docutil-mcp"]

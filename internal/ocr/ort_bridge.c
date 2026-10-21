@@ -32,7 +32,7 @@ ort_session_t* ort_create_session(const void* modelData, size_t modelSize, char*
     }
 
     OrtEnv* env = NULL;
-    OrtStatus* status = api->CreateEnv(3, "pdf2docx", &env);
+    OrtStatus* status = api->CreateEnv(3, "docutil", &env);
     if (status) {
         *errMsg = strdup(api->GetErrorMessage(status));
         api->ReleaseStatus(status);

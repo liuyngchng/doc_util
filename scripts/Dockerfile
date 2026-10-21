@@ -1,5 +1,5 @@
 # ================================================================
-# pdf2docx build image.
+# docutil build image.
 #   System packages + Go toolchain only.
 #
 # Go module cache is mapped from the host at build time via a volume

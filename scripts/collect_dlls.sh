@@ -4,8 +4,8 @@ set -e
 cd "$(dirname "$0")/.."
 export PATH=/ucrt64/bin:$PATH
 
-exe_file=dist/pdf2docx.exe
-pkg_dir=dist/pdf2docx-windows-amd64
+exe_file=dist/docutil.exe
+pkg_dir=dist/docutil-windows-amd64
 
 echo "  Copying DLLs..."
 

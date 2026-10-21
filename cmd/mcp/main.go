@@ -10,8 +10,8 @@
 //
 //	{
 //	  "mcpServers": {
-//	    "pdf2docx": {
-//	      "command": "/path/to/pdf2docx-mcp"
+//	    "docutil": {
+//	      "command": "/path/to/docutil-mcp"
 //	    }
 //	  }
 //	}
@@ -41,7 +41,7 @@ import (
 	"syscall"
 	"time"
 
-	"pdftoword/internal/pdfconv"
+	"docutil/internal/pdfconv"
 )
 
 // serverVersion is reported in the initialize response's serverInfo.
@@ -226,7 +226,7 @@ func handleInitialize(req rpcRequest) rpcResponse {
 		Result: initResult{
 			ProtocolVersion: mcpProtocolVersion,
 			Capabilities:    cap,
-			ServerInfo:      serverInfo{Name: "pdf2docx", Version: serverVersion},
+			ServerInfo:      serverInfo{Name: "docutil", Version: serverVersion},
 		},
 	}
 }
@@ -373,7 +373,7 @@ func toolError(id json.RawMessage, msg string) rpcResponse {
 // payload describing the result (either an output_path or base64 file_data).
 func convert(ctx context.Context, mode pdfconv.ConvertMode, args convertArgs) (string, error) {
 	// Resolve input PDF to a temp file.
-	pdfTmp, err := os.CreateTemp("", "pdf2docx-*.pdf")
+	pdfTmp, err := os.CreateTemp("", "docutil-*.pdf")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}

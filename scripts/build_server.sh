@@ -29,14 +29,14 @@ usage() {
   ./scripts/build_server.sh http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
 
 说明:
-  直接构建生产 Docker 镜像 pdf2docx-server:latest（Server 始终集成 OCR）。
+  直接构建生产 Docker 镜像 docutil-server:latest（Server 始终集成 OCR）。
 EOF
 }
 
 cd "$SCRIPT_DIR"
 
 if [[ ! -f "go.mod" ]]; then
-  echo "ERROR: run this script from the pdf2docx directory"
+  echo "ERROR: run this script from the docutil directory"
   exit 1
 fi
 
@@ -94,7 +94,7 @@ if [[ -t 1 ]]; then
 fi
 
 # ── Build image must exist ──────────────────────────────────────
-IMAGE="pdf2docx_build:latest"
+IMAGE="docutil_build:latest"
 if ! docker image inspect "$IMAGE" &>/dev/null; then
   echo "Building image $IMAGE ..."
   docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t "$IMAGE" -f scripts/Dockerfile .
@@ -116,7 +116,7 @@ ONNXRT_LIB="$SCRIPT_DIR/build/deps/onnxruntime"
 
 # ── 1. Build binary in build container ─────────────────────────
 echo ""
-echo "=== Step 1/2: Building pdf2docx-server binary ==="
+echo "=== Step 1/2: Building docutil-server binary ==="
 docker run --rm \
   -v "$SCRIPT_DIR":/workspace \
   -v "$GOCACHE_DIR":/tmp/gocache \
@@ -134,12 +134,12 @@ docker run --rm \
   -e GOARCH=amd64 \
   "$IMAGE" \
   bash -c "
-    rm -rf /workspace/dist/pdf2docx-server
-    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w -r \$ORIGIN' -o dist/pdf2docx-server ./cmd/server/ && \
+    rm -rf /workspace/dist/docutil-server
+    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w -r \$ORIGIN' -o dist/docutil-server ./cmd/server/ && \
     echo 'Build complete.'
   "
 
-echo "  dist/pdf2docx-server ($(du -h "$SCRIPT_DIR/dist/pdf2docx-server" | cut -f1))"
+echo "  dist/docutil-server ($(du -h "$SCRIPT_DIR/dist/docutil-server" | cut -f1))"
 
 # ── 2. Bundle deps + package Docker image ───────────────────────
 rm -rf "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
@@ -152,21 +152,21 @@ cp -r "$SCRIPT_DIR/models" "$SCRIPT_DIR/dist/models"
 cp -a "$SCRIPT_DIR/certs/cert.pem" "$SCRIPT_DIR/certs/key.pem" "$SCRIPT_DIR/dist/"
 
 echo ""
-echo "=== Step 2/2: Building Docker image pdf2docx-server:latest ==="
-docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t pdf2docx-server:latest -f scripts/Dockerfile.server "$SCRIPT_DIR"
+echo "=== Step 2/2: Building Docker image docutil-server:latest ==="
+docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t docutil-server:latest -f scripts/Dockerfile.server "$SCRIPT_DIR"
 
 # Clean up intermediate files from dist/ (keep certs/ as durable assets).
-rm -rf "$SCRIPT_DIR/dist/pdf2docx-server" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models" "$SCRIPT_DIR"/dist/cert.pem "$SCRIPT_DIR"/dist/key.pem
+rm -rf "$SCRIPT_DIR/dist/docutil-server" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models" "$SCRIPT_DIR"/dist/cert.pem "$SCRIPT_DIR"/dist/key.pem
 
 echo ""
 echo "=== Done ==="
-echo "  Docker image: pdf2docx-server:latest"
+echo "  Docker image: docutil-server:latest"
 echo ""
 echo "Run with:"
-echo "  docker run -d --rm --name pdf2docx-server -p 8443:8080 \\"
+echo "  docker run -d --rm --name docutil-server -p 8443:8080 \\"
 echo "    -v \$(pwd)/logs:/app/logs \\"
-echo "    pdf2docx-server:latest"
-echo "  docker logs -f pdf2docx-server"
+echo "    docutil-server:latest"
+echo "  docker logs -f docutil-server"
 echo ""
 echo "HTTPS enabled by default (self-signed cert for localhost)."
 echo "  Health check: curl -k https://localhost:8443/health"

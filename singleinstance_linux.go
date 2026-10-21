@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-// acquireSingleInstanceLock 确保同一时间只有一个 pdf2docx 实例在运行。
+// acquireSingleInstanceLock 确保同一时间只有一个 docutil 实例在运行。
 //
 // Fyne 的 preferences 存储用 os.Create 直接截断写文件，多实例并发读写同一个
 // preferences.json 时会触发 "Preferences load error: Cause: EOF"（无害但吓人）。
@@ -22,7 +22,7 @@ func acquireSingleInstanceLock() (func(), error) {
 	if err != nil {
 		cfgDir = os.TempDir()
 	}
-	dir := filepath.Join(cfgDir, "pdf2docx")
+	dir := filepath.Join(cfgDir, "docutil")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func acquireSingleInstanceLock() (func(), error) {
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("另一个 pdf2docx 实例已在运行")
+		return nil, fmt.Errorf("另一个 docutil 实例已在运行")
 	}
 
 	// 写入 PID 便于排查（失败不影响加锁）。

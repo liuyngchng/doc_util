@@ -18,7 +18,7 @@ import (
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
-	"pdftoword/internal/ocr"
+	"docutil/internal/ocr"
 
 	"github.com/gen2brain/go-fitz"
 )

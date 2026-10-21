@@ -3,18 +3,18 @@
 //
 // Build (requires CGO for OCR support):
 //
-//	CGO_ENABLED=1 go build -o pdftoword-cli ./cmd/cli/
+//	CGO_ENABLED=1 go build -o docutil-cli ./cmd/cli/
 //
 // Or without OCR:
 //
-//	CGO_ENABLED=0 go build -tags noocr -o pdftoword-cli ./cmd/cli/
+//	CGO_ENABLED=0 go build -tags noocr -o docutil-cli ./cmd/cli/
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"pdftoword/internal/pdfconv"
+	"docutil/internal/pdfconv"
 )
 
 func main() {
@@ -55,7 +55,7 @@ func main() {
 	}
 
 	if pdfPath == "" {
-		fmt.Fprintf(os.Stderr, "Usage: pdftoword-cli [--mode image|text] [--hotwords <w1,w2,...>] [--ocr] <pdf_file>\n")
+		fmt.Fprintf(os.Stderr, "Usage: docutil-cli [--mode image|text] [--hotwords <w1,w2,...>] [--ocr] <pdf_file>\n")
 		os.Exit(1)
 	}
 

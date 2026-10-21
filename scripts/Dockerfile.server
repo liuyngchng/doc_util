@@ -1,5 +1,5 @@
 # ================================================================
-# Production Docker image for the pdf2docx HTTP server.
+# Production Docker image for the docutil HTTP server.
 #
 # This image only packages a PRE-BUILT binary from dist/ — it does NOT
 # compile. Build the binary first (inside Docker) then build the image:
@@ -8,14 +8,14 @@
 #
 #   # or step by step:
 #   ./scripts/build_server.sh              # 1) build binary → dist/
-#   docker build -t pdf2docx-server -f scripts/Dockerfile.server .
+#   docker build -t docutil-server -f scripts/Dockerfile.server .
 #   #                                 2) package dist/ into image
 #
 # Run:
-#   docker run -d --rm --name pdf2docx-server -p 8443:8080 \
+#   docker run -d --rm --name docutil-server -p 8443:8080 \
 #     -v $(pwd)/logs:/app/logs \
-#     pdf2docx-server
-#   docker logs -f pdf2docx-server
+#     docutil-server
+#   docker logs -f docutil-server
 #   curl -k https://localhost:8443/health
 #   # logs are also on the host at ./logs/server.log
 # ================================================================
@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Pre-built binary + ONNX Runtime shared lib + OCR models.
-COPY dist/pdf2docx-server /app/pdf2docx-server
+COPY dist/docutil-server /app/docutil-server
 COPY dist/libonnxruntime.so* /app/
 COPY dist/models /app/models
 
@@ -64,4 +64,4 @@ VOLUME ["/app/logs"]
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/pdf2docx-server"]
+ENTRYPOINT ["/app/docutil-server"]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成自签名证书，供 pdf2docx-server 的 HTTPS 使用。
+# 生成自签名证书，供 docutil-server 的 HTTPS 使用。
 #   ./scripts/gen_cert.sh [证书输出目录]
 #
 # 默认输出到 certs/cert.pem + certs/key.pem。
@@ -28,7 +28,7 @@ echo "生成自签名证书（RSA-2048，10 年有效期）..."
 openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -keyout "$KEY_FILE" \
   -out "$CERT_FILE" \
-  -subj "/C=CN/O=pdf2docx/CN=localhost" \
+  -subj "/C=CN/O=docutil/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
 echo "证书生成完毕:"

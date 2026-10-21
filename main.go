@@ -17,8 +17,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"pdftoword/internal/ocr"
-	"pdftoword/internal/pdfconv"
+	"docutil/internal/ocr"
+	"docutil/internal/pdfconv"
 )
 
 type pdfFile struct {
@@ -65,9 +65,9 @@ func main() {
 	// 自定义主题：加大文件选择对话框中"取消"和"打开"按钮之间的间距
 	customTheme := &spacedTheme{Theme: theme.DefaultTheme()}
 
-	a := app.NewWithID("com.pdf2docx.app")
+	a := app.NewWithID("com.docutil.app")
 	a.Settings().SetTheme(customTheme)
-	w := a.NewWindow("PDF2Word - PDF转Word工具")
+	w := a.NewWindow("DocUtil - 文档处理工具")
 
 	// ── Persistent preferences ──────────────────────────────────────
 	prefs := a.Preferences()
@@ -146,7 +146,7 @@ func main() {
 		updateConvertBtn(convertBtn, 0, converting, hasOutputMode())
 		statusLabel.SetText("请添加 PDF 或图片文件")
 		outputLabel.SetText("")
-		w.SetTitle("PDF2Word - PDF转Word工具")
+		w.SetTitle("DocUtil - 文档处理工具")
 	})
 
 	btnRow := container.NewHBox(addBtn, addFolderBtn)
@@ -248,7 +248,7 @@ func main() {
 			for i, f := range files {
 				fyne.Do(func() {
 					statusLabel.SetText(fmt.Sprintf("正在处理 (%d/%d): %s", i+1, total, f.name))
-					w.SetTitle(fmt.Sprintf("PDF2Word - 转换中 (%d/%d)", i+1, total))
+					w.SetTitle(fmt.Sprintf("DocUtil - 转换中 (%d/%d)", i+1, total))
 				})
 
 				baseProgress := float64(i) / float64(total)
@@ -297,7 +297,7 @@ func main() {
 				progressBar.Hide()
 				statusLabel.SetText("全部转换完成！")
 				outputLabel.SetText(strings.Join(results, "\n"))
-				w.SetTitle("PDF2Word - 完成")
+				w.SetTitle("DocUtil - 完成")
 
 				msgLabel := widget.NewLabel(fmt.Sprintf("共 %d 个文件:\n\n%s", total, strings.Join(results, "\n")))
 				msgLabel.Alignment = fyne.TextAlignLeading

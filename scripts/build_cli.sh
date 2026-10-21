@@ -14,7 +14,7 @@ set -euo pipefail
 # ────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="pdf2docx_build:latest"
+IMAGE="docutil_build:latest"
 
 # ── Usage ───────────────────────────────────────────────────────
 usage() {
@@ -96,7 +96,7 @@ fi
 cd "$SCRIPT_DIR"
 
 if [[ ! -f "main.go" ]] || [[ ! -f "go.mod" ]]; then
-  echo "ERROR: run this script from the pdf2docx directory"
+  echo "ERROR: run this script from the docutil directory"
   exit 1
 fi
 
@@ -157,7 +157,7 @@ COMMON_ENV=(
 # ── Obfuscation (Windows only; Linux OCR build cannot use garble) ───
 if $OBFUSCATE; then
   WIN_BUILD_BIN="garble -literals"
-  GARBLE_ENV=(-e GOGARBLE=pdftoword)
+  GARBLE_ENV=(-e GOGARBLE=docutil)
   WIN_OBF_LABEL=" (obfuscated)"
 else
   WIN_BUILD_BIN="go"
@@ -167,7 +167,7 @@ fi
 
 # ── 1. Linux GUI (always OCR) ────────────────────────────────────
 echo ""
-echo "=== Building pdf2docx (Linux GUI, OCR) ==="
+echo "=== Building docutil (Linux GUI, OCR) ==="
 docker run --rm \
   -v "$SCRIPT_DIR":/workspace \
   -v "$GOCACHE_DIR":/tmp/gocache \
@@ -182,8 +182,8 @@ docker run --rm \
   bash -c "
     rm -rf /workspace/dist/*
     mkdir -p /workspace/dist
-    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w' -o dist/pdf2docx . && \
-    chown \$HOST_UID:\$HOST_GID dist/pdf2docx
+    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w' -o dist/docutil . && \
+    chown \$HOST_UID:\$HOST_GID dist/docutil
   "
 
 # ── Bundle OCR runtime deps ──────────────────────────────────────
@@ -212,7 +212,7 @@ echo "  bundled:  dist/models/"
 
 # ── 2. Windows GUI (cross-compile, no OCR) ───────────────────────
 echo ""
-echo "=== Building pdf2docx.exe (Windows GUI)${WIN_OBF_LABEL} ==="
+echo "=== Building docutil.exe (Windows GUI)${WIN_OBF_LABEL} ==="
 docker run --rm \
   -v "$SCRIPT_DIR":/workspace \
   -v "$GOCACHE_DIR":/tmp/gocache \
@@ -228,44 +228,44 @@ docker run --rm \
   -e CGO_LDFLAGS="-lucrt" \
   "$IMAGE" \
   bash -c "
-    rm -rf /workspace/dist/pdf2docx.exe
-    ${WIN_BUILD_BIN} build ${GO_BUILD_X} -mod=mod -tags noocr -ldflags='-s -w -H windowsgui' -o dist/pdf2docx.exe . && \
-    chown \$HOST_UID:\$HOST_GID dist/pdf2docx.exe
+    rm -rf /workspace/dist/docutil.exe
+    ${WIN_BUILD_BIN} build ${GO_BUILD_X} -mod=mod -tags noocr -ldflags='-s -w -H windowsgui' -o dist/docutil.exe . && \
+    chown \$HOST_UID:\$HOST_GID dist/docutil.exe
   "
 
 echo ""
 echo "=== Build complete ==="
-echo "  Linux GUI:    dist/pdf2docx      ($(du -h "$SCRIPT_DIR/dist/pdf2docx" | cut -f1))"
-echo "  Windows GUI:  dist/pdf2docx.exe  ($(du -h "$SCRIPT_DIR/dist/pdf2docx.exe" | cut -f1))"
+echo "  Linux GUI:    dist/docutil      ($(du -h "$SCRIPT_DIR/dist/docutil" | cut -f1))"
+echo "  Windows GUI:  dist/docutil.exe  ($(du -h "$SCRIPT_DIR/dist/docutil.exe" | cut -f1))"
 
 # ── Package into tar for distribution ─────────────────────────────
 echo ""
 echo "--- Packaging ---"
-ARCHIVE_LINUX="pdf2docx-linux-amd64.tar"
-ARCHIVE_WIN="pdf2docx-windows-amd64.tar"
+ARCHIVE_LINUX="docutil-linux-amd64.tar"
+ARCHIVE_WIN="docutil-windows-amd64.tar"
 
 rm -f "$SCRIPT_DIR/dist/$ARCHIVE_LINUX" "$SCRIPT_DIR/dist/$ARCHIVE_WIN"
 
 # Linux: always bundle .so + models (OCR version).
 # Stage files into a directory first (tar --transform would also rewrite
 # symlink targets, breaking libonnxruntime.so -> .so.1 -> .so.1.27.1).
-STAGE_DIR="$SCRIPT_DIR/dist/pdf2docx-linux-amd64"
+STAGE_DIR="$SCRIPT_DIR/dist/docutil-linux-amd64"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 cp -a \
-  "$SCRIPT_DIR/dist/pdf2docx" \
+  "$SCRIPT_DIR/dist/docutil" \
   "$SCRIPT_DIR"/dist/libonnxruntime.so* \
   "$SCRIPT_DIR/dist/libopencv_imgproc.so.406" \
   "$SCRIPT_DIR/dist/libopencv_core.so.406" \
   "$SCRIPT_DIR/dist/libtbb.so.12" \
   "$SCRIPT_DIR/dist/models" \
   "$STAGE_DIR/"
-tar -cf "$SCRIPT_DIR/dist/$ARCHIVE_LINUX" -C "$SCRIPT_DIR/dist" pdf2docx-linux-amd64
+tar -cf "$SCRIPT_DIR/dist/$ARCHIVE_LINUX" -C "$SCRIPT_DIR/dist" docutil-linux-amd64
 rm -rf "$STAGE_DIR"
 echo "  $ARCHIVE_LINUX  ($(du -h "$SCRIPT_DIR/dist/$ARCHIVE_LINUX" | cut -f1)) — Linux OCR 完整包"
 
 rm -rf \
-  "$SCRIPT_DIR/dist/pdf2docx" \
+  "$SCRIPT_DIR/dist/docutil" \
   "$SCRIPT_DIR"/dist/libonnxruntime.so* \
   "$SCRIPT_DIR/dist/libopencv_imgproc.so.406" "$SCRIPT_DIR/dist/libopencv_core.so.406" \
   "$SCRIPT_DIR/dist/libtbb.so.12" \
@@ -273,16 +273,16 @@ rm -rf \
 
 # Windows: single exe (text extraction via MuPDF only, no OCR).
 cd "$SCRIPT_DIR/dist"
-tar -cf "$ARCHIVE_WIN" --transform='s,^,pdf2docx-windows-amd64/,' pdf2docx.exe
+tar -cf "$ARCHIVE_WIN" --transform='s,^,docutil-windows-amd64/,' docutil.exe
 cd "$SCRIPT_DIR"
 echo "  $ARCHIVE_WIN  ($(du -h "$SCRIPT_DIR/dist/$ARCHIVE_WIN" | cut -f1))"
-rm -f "$SCRIPT_DIR/dist/pdf2docx.exe"
+rm -f "$SCRIPT_DIR/dist/docutil.exe"
 
 echo ""
 echo "分发文件（做好了的压缩包）:"
 echo "  dist/$ARCHIVE_LINUX"
 echo "  dist/$ARCHIVE_WIN"
 echo ""
-echo "Linux OCR 包内容: pdf2docx + .so 库 + models/ 模型目录"
-echo "解包后进入 pdf2docx-linux-amd64/ 目录，运行 ./pdf2docx 即可使用。"
-echo "Windows 包内容: pdf2docx.exe（支持 MuPDF 文本提取，OCR 请用 scripts/build.bat 原生编译）"
+echo "Linux OCR 包内容: docutil + .so 库 + models/ 模型目录"
+echo "解包后进入 docutil-linux-amd64/ 目录，运行 ./docutil 即可使用。"
+echo "Windows 包内容: docutil.exe（支持 MuPDF 文本提取，OCR 请用 scripts/build.bat 原生编译）"

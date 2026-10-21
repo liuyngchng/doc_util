@@ -3,7 +3,7 @@ package pdfconv
 import (
 	"testing"
 
-	"pdftoword/internal/ocr"
+	"docutil/internal/ocr"
 )
 
 func TestCleanOCRLine(t *testing.T) {
