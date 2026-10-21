@@ -98,22 +98,37 @@ func handleConvertImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConvertText(w http.ResponseWriter, r *http.Request) {
+	slog.Info("text conversion started")
 	convertAndServe(w, r, pdfconv.ModeText, nil)
 }
 
 func handleExtractTxt(w http.ResponseWriter, r *http.Request) {
-	pdfTmp, _, err := saveUpload(w, r)
+	pdfTmp, filename, err := saveUpload(w, r)
 	if err != nil {
 		return
 	}
 	defer os.Remove(pdfTmp)
 
+	slog.Info("extract text started", "filename", filename)
+
+	start := time.Now()
 	result, err := pdfconv.ExtractText(pdfTmp)
 	if err != nil {
-		slog.Error("extract text failed", "error", err)
+		slog.Error("extract text failed",
+			"filename", filename,
+			"error", err,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
 		http.Error(w, fmt.Sprintf("extract text failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	slog.Info("extract text done",
+		"filename", filename,
+		"text_chars", len([]rune(result.Text)),
+		"ocr_confidence", result.OCRConfidence,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(result)

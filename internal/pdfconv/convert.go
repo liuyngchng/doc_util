@@ -8,6 +8,7 @@ import (
 	_ "image/gif" // register GIF decoder
 	"image/jpeg"
 	_ "image/png" // register PNG decoder
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -168,12 +169,12 @@ func convertToImage(doc *fitz.Document, pdfPath string, numPages int, hotwords [
 			} else {
 				// Scanned page — use OCR with bounding boxes.
 				if ocrEngine == nil {
-					ocrEngine, err = initOCREngine()
-					if err != nil {
-						// OCR unavailable — skip annotation for this page.
-						fmt.Fprintf(os.Stderr, "page %d: OCR not available for hotword annotation: %v\n", i+1, err)
-					}
+				ocrEngine, err = initOCREngine()
+				if err != nil {
+					// OCR unavailable — skip annotation for this page.
+					slog.Warn("OCR not available for hotword annotation", "page", i+1, "error", err)
 				}
+			}
 				if ocrEngine != nil {
 					annotateImageWithOCR(img, hotwords, ocrEngine)
 				}
@@ -440,7 +441,7 @@ func runOCRPageWithConfidence(engine *ocr.Engine, img *image.RGBA) ([]string, fl
 
 	pageText, err := engine.Recognize(mat)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "OCR page failed: %v\n", err)
+		slog.Error("OCR page failed", "error", err)
 		return nil, 0
 	}
 

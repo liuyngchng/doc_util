@@ -24,8 +24,20 @@ build/gocache
 build/gocache_dev
 build/gomodcache
 
-# 构建产物（server Docker 镜像需要 dist/，不排除）
+# 构建产物（server/MCP 镜像只需要 dist/ 下的 server 二进制、onnxruntime、models）
 vendor
+dist/*.tar
+dist/pdf2docx
+dist/pdf2docx.exe
+dist/pdf2docx-linux-amd64/
+dist/pdf2docx-windows-amd64/
+dist/libopencv_*.so.*
+dist/libtbb.so*
+
+# 文档（Docker 镜像用不到）
+README.md
+API.md
+CLAUDE.md
 
 # 旧的 GUI 构建脚本（server 用不到）
 build.sh
