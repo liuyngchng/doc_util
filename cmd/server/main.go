@@ -12,13 +12,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 
 	"docutil/internal/pdfconv"
@@ -54,10 +58,13 @@ func main() {
 		port = "8080"
 	}
 
+	// Enforce a cap on concurrent OCR-bound conversions (default 4).
+	maxConcurrent := maxConcurrentConversions()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /convert/image", handleConvertImage)
-	mux.HandleFunc("POST /convert/text", handleConvertText)
-	mux.HandleFunc("POST /extract/txt", handleExtractTxt)
+	mux.HandleFunc("POST /convert/image", limit(maxConcurrent, handleConvertImage))
+	mux.HandleFunc("POST /convert/text", limit(maxConcurrent, handleConvertText))
+	mux.HandleFunc("POST /extract/txt", limit(maxConcurrent, handleExtractTxt))
 	mux.HandleFunc("GET /health", handleHealth)
 
 	srv := &http.Server{
@@ -68,28 +75,47 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	slog.Info("server starting", "port", port)
-	certFile := os.Getenv("TLS_CERT_FILE")
-	keyFile := os.Getenv("TLS_KEY_FILE")
-	if certFile != "" && keyFile != "" {
-		// Verify files exist before switching to TLS.
-		if _, err := os.Stat(certFile); err != nil {
-			slog.Warn("TLS_CERT_FILE set but not found, falling back to HTTP", "file", certFile, "error", err)
-		} else if _, err := os.Stat(keyFile); err != nil {
-			slog.Warn("TLS_KEY_FILE set but not found, falling back to HTTP", "file", keyFile, "error", err)
-		} else {
-			slog.Info("TLS enabled", "cert", certFile, "key", keyFile)
-			if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil {
-				slog.Error("server fatal", "error", err)
-				os.Exit(1)
-			}
-			return
-		}
-	}
+	// Graceful shutdown on SIGTERM / SIGINT.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	if err := srv.ListenAndServe(); err != nil {
-		slog.Error("server fatal", "error", err)
-		os.Exit(1)
+	errCh := make(chan error, 1)
+	go func() {
+		certFile := os.Getenv("TLS_CERT_FILE")
+		keyFile := os.Getenv("TLS_KEY_FILE")
+		tlsEnabled := false
+		if certFile != "" && keyFile != "" {
+			if _, err := os.Stat(certFile); err != nil {
+				slog.Warn("TLS_CERT_FILE set but not found, falling back to HTTP", "file", certFile, "error", err)
+			} else if _, err := os.Stat(keyFile); err != nil {
+				slog.Warn("TLS_KEY_FILE set but not found, falling back to HTTP", "file", keyFile, "error", err)
+			} else {
+				slog.Info("TLS enabled", "cert", certFile, "key", keyFile)
+				tlsEnabled = true
+				errCh <- srv.ListenAndServeTLS(certFile, keyFile)
+			}
+		}
+		if !tlsEnabled {
+			errCh <- srv.ListenAndServe()
+		}
+	}()
+
+	slog.Info("server starting", "port", port, "max_concurrent", maxConcurrent)
+
+	select {
+	case err := <-errCh:
+		if err != http.ErrServerClosed {
+			slog.Error("server fatal", "error", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		slog.Info("shutting down gracefully")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("graceful shutdown timed out, forcing close", "error", err)
+			srv.Close()
+		}
 	}
 }
 
@@ -104,6 +130,18 @@ func slogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func maxConcurrentConversions() int {
+	s := os.Getenv("MAX_CONCURRENT_CONVERSIONS")
+	if s == "" {
+		return 4
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 4
+	}
+	return n
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -121,11 +159,34 @@ func withLogging(next http.Handler) http.Handler {
 	})
 }
 
+// limit returns a handler that rejects requests with 429 Too Many Requests when
+// concurrency exceeds capacity.
+func limit(n int, next http.HandlerFunc) http.HandlerFunc {
+	if n <= 0 {
+		// Unbounded (should not happen with current defaults).
+		return next
+	}
+	sema := make(chan struct{}, n)
+	return func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case sema <- struct{}{}:
+			defer func() { <-sema }()
+			next(w, r)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "too many concurrent requests"})
+		}
+	}
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"ok"}`))
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		slog.Warn("health response write failed", "error", err)
+	}
 }
 
 func handleConvertImage(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +238,13 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 		return
 	}
 	defer os.Remove(pdfTmp)
+
+	// Validate file type: /convert/image and /convert/text require PDF.
+	if !isPDFFile(pdfTmp) {
+		slog.Warn("unsupported file type for conversion", "filename", headerFilename)
+		http.Error(w, "unsupported file type: only PDF files are accepted for /convert/image and /convert/text", http.StatusBadRequest)
+		return
+	}
 
 	slog.Info("conversion started",
 		"filename", headerFilename,
@@ -275,6 +343,23 @@ func saveUpload(w http.ResponseWriter, r *http.Request) (tmpPath, filename strin
 		"size_bytes", header.Size,
 	)
 	return tmp.Name(), header.Filename, nil
+}
+
+// isPDFFile checks whether the file at path is a PDF by magic bytes.
+func isPDFFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var magic [4]byte
+	n, _ := io.ReadFull(f, magic[:])
+	if n < 4 {
+		return false
+	}
+	// "%PDF"
+	return magic[0] == '%' && magic[1] == 'P' && magic[2] == 'D' && magic[3] == 'F'
 }
 
 func docxFilename(pdfName string, mode pdfconv.ConvertMode) string {

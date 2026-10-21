@@ -411,12 +411,7 @@ func convert(ctx context.Context, mode pdfconv.ConvertMode, args convertArgs) (s
 
 	// Convert.
 	hotwords := pdfconv.ParseHotwords(args.Hotwords)
-	var docxPath string
-	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
-		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp.Name(), mode, hotwords, func(pct float64) {})
-	} else {
-		docxPath, err = pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
-	}
+	docxPath, err := pdfconv.ConvertContext(ctx, pdfTmp.Name(), mode, hotwords, func(pct float64) {})
 	if err != nil {
 		return "", fmt.Errorf("convert: %w", err)
 	}

@@ -2,6 +2,7 @@ package pdfconv
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/draw"
@@ -45,6 +46,13 @@ func Convert(pdfPath string, mode ConvertMode, progressFn func(float64)) (string
 // ConvertWithHotwords converts a PDF file to a DOCX with optional hotword
 // annotation (red underline) in image mode. hotwords are case-insensitive.
 func ConvertWithHotwords(pdfPath string, mode ConvertMode, hotwords []string, progressFn func(float64)) (string, error) {
+	return ConvertContext(context.Background(), pdfPath, mode, hotwords, progressFn)
+}
+
+// ConvertContext is like ConvertWithHotwords but accepts a context for
+// cancellation. Long-running conversions check ctx.Err() between pages and
+// return early with the context error when cancelled.
+func ConvertContext(ctx context.Context, pdfPath string, mode ConvertMode, hotwords []string, progressFn func(float64)) (string, error) {
 	doc, err := fitz.New(pdfPath)
 	if err != nil {
 		return "", fmt.Errorf("open PDF: %w", err)
@@ -58,9 +66,9 @@ func ConvertWithHotwords(pdfPath string, mode ConvertMode, hotwords []string, pr
 
 	switch mode {
 	case ModeImage:
-		return convertToImage(doc, pdfPath, numPages, hotwords, progressFn)
+		return convertToImage(ctx, doc, pdfPath, numPages, hotwords, progressFn)
 	case ModeText:
-		return convertToText(doc, pdfPath, numPages, progressFn)
+		return convertToText(ctx, doc, pdfPath, numPages, progressFn)
 	default:
 		return "", fmt.Errorf("unknown convert mode: %d", mode)
 	}
@@ -147,14 +155,22 @@ func loadImage(path string) (*image.RGBA, error) {
 
 // ── Image mode (screenshot) ─────────────────────────────────────────────────
 
-func convertToImage(doc *fitz.Document, pdfPath string, numPages int, hotwords []string, progressFn func(float64)) (string, error) {
+func convertToImage(ctx context.Context, doc *fitz.Document, pdfPath string, numPages int, hotwords []string, progressFn func(float64)) (string, error) {
 	const dpi = 150.0
 	db := &docxBuilder{}
 
 	// OCR engine is lazily initialised for scanned pages.
 	var ocrEngine *ocr.Engine
+	defer func() {
+		if ocrEngine != nil {
+			ocrEngine.Release()
+		}
+	}()
 
 	for i := 0; i < numPages; i++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		img, err := doc.ImageDPI(i, dpi)
 		if err != nil {
 			return "", fmt.Errorf("render page %d: %w", i+1, err)
@@ -169,12 +185,12 @@ func convertToImage(doc *fitz.Document, pdfPath string, numPages int, hotwords [
 			} else {
 				// Scanned page — use OCR with bounding boxes.
 				if ocrEngine == nil {
-				ocrEngine, err = initOCREngine()
-				if err != nil {
-					// OCR unavailable — skip annotation for this page.
-					slog.Warn("OCR not available for hotword annotation", "page", i+1, "error", err)
+					ocrEngine, err = initOCREngine()
+					if err != nil {
+						// OCR unavailable — skip annotation for this page.
+						slog.Warn("OCR not available for hotword annotation", "page", i+1, "error", err)
+					}
 				}
-			}
 				if ocrEngine != nil {
 					annotateImageWithOCR(img, hotwords, ocrEngine)
 				}
@@ -188,10 +204,6 @@ func convertToImage(doc *fitz.Document, pdfPath string, numPages int, hotwords [
 		db.add(jpgData, w, h)
 
 		progressFn(float64(i+1) / float64(numPages))
-	}
-
-	if ocrEngine != nil {
-		ocrEngine.Release()
 	}
 
 	docxPath := outputPath(pdfPath)
@@ -346,13 +358,21 @@ func findHotwordInString(text, hotword string, box ocr.OCRBox) []htmlpos.MatchRe
 
 // ── Text mode (extract or OCR) ──────────────────────────────────────────────
 
-func convertToText(doc *fitz.Document, pdfPath string, numPages int, progressFn func(float64)) (string, error) {
+func convertToText(ctx context.Context, doc *fitz.Document, pdfPath string, numPages int, progressFn func(float64)) (string, error) {
 	db := &textDocxBuilder{}
 
 	// OCR engine is lazily initialised when a page has no text.
 	var ocrEngine *ocr.Engine
+	defer func() {
+		if ocrEngine != nil {
+			ocrEngine.Release()
+		}
+	}()
 
 	for i := 0; i < numPages; i++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		pageText, err := doc.Text(i)
 		if err != nil {
 			return "", fmt.Errorf("extract text page %d: %w", i+1, err)
@@ -373,7 +393,6 @@ func convertToText(doc *fitz.Document, pdfPath string, numPages int, progressFn 
 				if err != nil {
 					return "", fmt.Errorf("page %d has no text layer and OCR is not available: %w", i+1, err)
 				}
-				defer ocrEngine.Release()
 			}
 
 			img, err := doc.ImageDPI(i, 150)

@@ -35,10 +35,11 @@ RUN if [ -n "$HTTP_PROXY" ]; then \
         echo "Acquire::https::Proxy \"$HTTPS_PROXY\";" >> /etc/apt/apt.conf.d/01proxy; \
     fi
 
-# Runtime deps: OpenCV libs for OCR.
+# Runtime deps: OpenCV libs for OCR + LibreOffice headless for legacy .doc support.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopencv-core406t64 \
     libopencv-imgproc406t64 \
+    libreoffice-writer-nogui \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

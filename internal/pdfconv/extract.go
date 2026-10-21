@@ -3,6 +3,7 @@ package pdfconv
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"image"
@@ -11,8 +12,12 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -25,22 +30,26 @@ import (
 
 // DOCX namespace URIs.
 const (
-	nsW   = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-	nsA   = "http://schemas.openxmlformats.org/drawingml/2006/main"
-	nsR   = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+	nsW = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+	nsA = "http://schemas.openxmlformats.org/drawingml/2006/main"
+	nsR = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 )
 
 // ExtractResult holds the text extracted from a document plus the average
 // OCR confidence across the document.
 type ExtractResult struct {
-	Text           string  `json:"text"`
-	OCRConfidence  float64 `json:"ocr_confidence"`
+	Text          string  `json:"text"`
+	OCRConfidence float64 `json:"ocr_confidence"`
 }
 
-// ExtractText processes a PDF or DOCX file and returns its full text content.
-// For image-only pages (scanned PDFs, DOCX embedded images), OCR is used.
-// The file type is auto-detected from the magic bytes; the filename is not
-// used.
+// ExtractText processes a PDF, DOCX, or legacy .doc file and returns its full
+// text content. For image-only pages (scanned PDFs, DOCX embedded images), OCR
+// is used.  The file type is auto-detected from the magic bytes; the filename
+// is not used.
+//
+// Legacy .doc (OLE2 Compound Document) files are converted to .docx via
+// LibreOffice headless (soffice) before extraction.  Requires libreoffice-writer
+// to be installed on the system.
 //
 // Known limitations:
 //   - PDF: go-fitz does not expose page-level embedded-image extraction.
@@ -52,6 +61,9 @@ type ExtractResult struct {
 func ExtractText(path string) (*ExtractResult, error) {
 	if isDocx(path) {
 		return extractDocxText(path)
+	}
+	if isOLE2File(path) {
+		return extractOLE2Text(path)
 	}
 	return extractPDFText(path)
 }
@@ -97,13 +109,105 @@ func isDocx(path string) bool {
 	return false
 }
 
+// isOLE2File returns true when path is an OLE2 Compound Document Binary file
+// (the legacy Microsoft Office container format: .doc, .xls, .ppt, etc.).
+// Detection reads the 8-byte OLE2 header magic D0 CF 11 E0 A1 B1 1A E1.
+func isOLE2File(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var magic [8]byte
+	n, _ := io.ReadFull(f, magic[:])
+	if n < 8 {
+		return false
+	}
+	return bytes.Equal(magic[:], []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
+}
+
+// ── Legacy .doc (OLE2) extraction ────────────────────────────────────────
+
+// sofficeTimeout caps how long a single LibreOffice conversion may run.
+const sofficeTimeout = 60 * time.Second
+
+// sofficePath returns the path to the LibreOffice binary, honouring the
+// SOFFICE_PATH env var (default /usr/bin/soffice).
+func sofficePath() string {
+	if p := os.Getenv("SOFFICE_PATH"); p != "" {
+		return p
+	}
+	return "/usr/bin/soffice"
+}
+
+// extractOLE2Text converts a legacy Office file (.doc/.xls/.ppt) to .docx via
+// LibreOffice headless, then extracts text from the result.  All temporary files
+// are cleaned up before return.
+func extractOLE2Text(path string) (*ExtractResult, error) {
+	docxTmp, cleanup, err := convertOLE2ToDocx(path)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	return extractDocxText(docxTmp)
+}
+
+// convertOLE2ToDocx converts a legacy Office file to .docx using LibreOffice
+// headless.  It returns the path to the generated .docx file and a cleanup
+// function that removes both the file and its containing temp directory.
+func convertOLE2ToDocx(srcPath string) (docxPath string, cleanup func(), _ error) {
+	soffice := sofficePath()
+	if _, err := os.Stat(soffice); err != nil {
+		return "", nil, fmt.Errorf("libreoffice not found at %s (set SOFFICE_PATH to its location): %w", soffice, err)
+	}
+
+	outDir, err := os.MkdirTemp("", "docutil-lo-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	cleanup = func() { os.RemoveAll(outDir) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), sofficeTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, soffice,
+		"--headless",
+		"--convert-to", "docx",
+		"--outdir", outDir,
+		srcPath,
+	)
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		os.RemoveAll(outDir)
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", nil, fmt.Errorf("libreoffice conversion timed out after %s: %w", sofficeTimeout, runErr)
+		}
+		return "", nil, fmt.Errorf("libreoffice conversion failed: %w (output: %s)", runErr, strings.TrimSpace(string(out)))
+	}
+
+	// The output file is named after the source basename with a .docx extension.
+	base := filepath.Base(srcPath)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	docxPath = filepath.Join(outDir, stem+".docx")
+	if _, err := os.Stat(docxPath); err != nil {
+		os.RemoveAll(outDir)
+		return "", nil, fmt.Errorf("libreoffice produced no .docx output (output: %s)", strings.TrimSpace(string(out)))
+	}
+
+	slog.Info("libreoffice converted legacy document", "src", base, "out", filepath.Base(docxPath))
+	return docxPath, cleanup, nil
+}
+
 // ── Confidence tracking ──────────────────────────────────────────────────
 
 // confTracker accumulates text and weighted confidence for the document.
 type confTracker struct {
-	sb            strings.Builder
-	totalChars    int
-	weightedConf  float64
+	sb           strings.Builder
+	totalChars   int
+	weightedConf float64
 }
 
 // addNative appends lines from a native text source (MuPDF text layer or DOCX
@@ -241,6 +345,11 @@ func extractDocxText(path string) (*ExtractResult, error) {
 
 	// 3. Walk segments: text → addNative; image → OCR → addOCR.
 	var ocrEngine *ocr.Engine
+	defer func() {
+		if ocrEngine != nil {
+			ocrEngine.Release()
+		}
+	}()
 	tr := &confTracker{}
 
 	for _, seg := range segments {
@@ -279,8 +388,8 @@ func parseRels(zr *zip.ReadCloser) (map[string]string, error) {
 
 	f, err := openZipFile(zr, relsFile)
 	if err != nil {
-		// No rels file is valid — means no relationships/images.
-		return nil, nil
+		// No rels file means no images, which is valid.
+		return map[string]string{}, nil
 	}
 	defer f.Close()
 

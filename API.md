@@ -2,13 +2,13 @@
 
 ## 概述
 
-HTTP 服务，接收 PDF / DOCX 文件，返回转换结果。提供三种能力：
+HTTP 服务，接收 PDF / DOCX / .doc 文件，返回转换结果。提供三种能力：
 
-| 端点 | 模式 | 产出 | 说明 |
-|------|------|------|------|
-| `/convert/image` | 截图版 | `.docx` | 每页渲染为图片嵌入 Word，始终可用；支持热词红色下划线标注 |
-| `/convert/text` | 文字版 | `.text.docx` | 提取文字（有文字层的 PDF 直接提取，扫描件 OCR），需要 OCR 模型 |
-| `/extract/txt` | 纯文本 | JSON | 提取 PDF / DOCX 的全部文本及 OCR 置信度，供其他服务调用 |
+| 端点 | 模式 | 产出 | 输入格式 |
+|------|------|------|----------|
+| `/convert/image` | 截图版 | `.docx` | PDF |
+| `/convert/text` | 文字版 | `.text.docx` | PDF |
+| `/extract/txt` | 纯文本 | JSON | PDF / DOCX / .doc |
 
 ---
 
@@ -44,7 +44,7 @@ Content-Type: multipart/form-data
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `file` | file | 是 | 要转换的 PDF 或图片文件，最大 64 MB |
+| `file` | file | 是 | 要转换的 PDF 文件（仅接受 `%PDF` magic bytes），最大 64 MB |
 | `hotwords` | string | 否 | 要标注的热词列表，多个热词用逗号、分号或换行分隔（大小写不敏感） |
 
 **成功响应**
@@ -64,10 +64,6 @@ Content-Disposition: attachment; filename="xxx.docx"
 **PDF 文件**：
 - **有文字层**：直接利用 PDF 内嵌文字的空间坐标定位，速度快、位置精确
 - **无文字层（扫描件）**：自动运行 OCR 识别文字并获取文本框坐标来定位，需要 OCR 模型
-
-**图片文件**（JPG/PNG/BMP/GIF/TIFF/WebP）：
-- **必须依赖 OCR 模型**来定位文字位置
-- 若无 OCR 模型，热词标注不生效，但转换仍正常完成
 
 **热词分隔格式示例**：
 
@@ -103,7 +99,7 @@ Content-Type: multipart/form-data
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `file` | file | 是 | 要转换的 PDF 文件，最大 64 MB |
+| `file` | file | 是 | 要转换的 PDF 文件（仅接受 `%PDF` magic bytes），最大 64 MB |
 
 **成功响应**
 
@@ -124,13 +120,23 @@ POST /extract/txt
 Content-Type: multipart/form-data
 ```
 
-接收 PDF 或 DOCX 文件，返回其中全部文本及 OCR 置信度（JSON）。文件类型根据内容自动识别，不依赖文件名。图片中的文字会通过 OCR 提取。
+接收 PDF、DOCX 或旧版 Word `.doc` 文件，返回其中全部文本及 OCR 置信度（JSON）。文件类型根据 magic bytes 自动识别，不依赖文件名。图片中的文字会通过 OCR 提取。
+
+#### 输入格式支持
+
+| 格式 | 扩展名 | 检测方式 | 说明 |
+|------|--------|----------|------|
+| PDF | `.pdf` | `%PDF` magic | MuPDF 文字层提取 + 扫描页 OCR 渲染 |
+| DOCX | `.docx` | `PK` ZIP magic + `word/document.xml` | 解析正文文本 + 内嵌图片 OCR |
+| .doc | `.doc` | OLE2 Compound Document magic (`D0 CF 11 E0`) | LibreOffice headless → DOCX → 提取文本 |
+
+其他格式（如 `.odt`、`.xls` 等）不会被识别，直接走 PDF 分支，MuPDF 打开失败返回错误。
 
 **请求**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `file` | file | 是 | 要提取的 PDF 或 DOCX 文件，最大 64 MB |
+| `file` | file | 是 | 要提取的 PDF / DOCX / .doc 文件，最大 64 MB |
 
 **成功响应**
 
@@ -159,11 +165,13 @@ Content-Type: application/json; charset=utf-8
 
 - **PDF**：优先用 MuPDF 提取文字层；纯扫描页（无文字层）渲染为图片后 OCR。
 - **DOCX**：解析正文文本，并对内嵌图片逐张 OCR，按文档顺序合并返回。
+- **.doc**：先调用 LibreOffice headless（`soffice --headless --convert-to docx`）转为 DOCX，再按 DOCX 流程提取；单次转换超时 60s。需要 Docker 镜像安装 `libreoffice-writer-nogui`。
 
 #### 已知限制
 
 - **PDF 内嵌图片**：go-fitz 不暴露「提取页内嵌图片」的 API，因此「既有文字层又嵌了图片」的页面，只提取文字层，页内图片不会被单独 OCR；纯图片页（无文字层）会整页渲染后 OCR。
 - **DOCX**：仅处理正文 `word/document.xml` 与 `word/media/` 内嵌图片，不含页眉、页脚、脚注、文本框；无法解码的图片格式（如 EMF/WMF）会被跳过。
+- **.doc**：依赖 LibreOffice 转换质量，复杂排版（表格、多栏、嵌入对象）可能有差异。LibreOffice 未安装时返回 500 错误。
 
 ---
 
@@ -171,8 +179,9 @@ Content-Type: application/json; charset=utf-8
 
 | 状态码 | 说明 |
 |--------|------|
-| 400 | 请求格式错误（缺少 file 字段、非 multipart 等） |
+| 400 | 请求格式错误（缺少 file 字段、非 multipart、文件格式不支持等） |
 | 413 | 文件超过 64 MB |
+| 429 | 并发转换数超过上限（`MAX_CONCURRENT_CONVERSIONS`，默认 4） |
 | 500 | 转换失败或内部错误 |
 
 ---
@@ -183,6 +192,10 @@ Content-Type: application/json; charset=utf-8
 |----------|--------|------|
 | `PORT` | `8080` | 监听端口 |
 | `LOG_LEVEL` | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
+| `LOG_DIR` | (空) | 日志输出目录（不设置则只写 stderr） |
+| `MAX_CONCURRENT_CONVERSIONS` | `4` | 并发转换上限（超限返回 429） |
+| `TLS_CERT_FILE` | (空) | TLS 证书路径（与 `TLS_KEY_FILE` 同时设置时启用 HTTPS） |
+| `TLS_KEY_FILE` | (空) | TLS 私钥路径 |
 
 ## 示例
 
@@ -227,9 +240,11 @@ curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
 # DOCX
 curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
   -F "file=@input.docx"
+
+# .doc（旧版 Word）
+curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
+  -F "file=@document.doc"
 ```
-
-
 
 ### 显示上传进度
 
@@ -239,8 +254,6 @@ curl -X POST http://localhost:8080/convert/image \
   -o output.docx \
   --progress-bar
 ```
-
-
 
 ### 验证结果
 
@@ -255,3 +268,4 @@ file output.docx
 - 上传文件最大 64 MB
 - 不支持加密 PDF
 - 读写超时：请求 60 秒，响应 300 秒
+- 并发转换上限默认 4（可通过 `MAX_CONCURRENT_CONVERSIONS` 调整）

@@ -176,16 +176,20 @@ func saveDocx(path string, b *docxBuilder) error {
 	if err != nil {
 		return fmt.Errorf("create docx: %w", err)
 	}
-	defer f.Close()
 
 	bw := bufio.NewWriter(f)
 	if err := b.writeTo(bw); err != nil {
+		f.Close()
 		return fmt.Errorf("write docx: %w", err)
 	}
 	if err := bw.Flush(); err != nil {
+		f.Close()
 		return fmt.Errorf("flush docx: %w", err)
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close docx: %w", err)
+	}
+	return nil
 }
 
 // escapeXML escapes special XML characters.
