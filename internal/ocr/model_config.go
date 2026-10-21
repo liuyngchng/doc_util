@@ -137,6 +137,18 @@ func CheckModels(baseDir string) bool {
 	return err1 == nil && err2 == nil && err3 == nil
 }
 
+// CheckSealModel returns true if the seal detection model file exists.
+func CheckSealModel(baseDir string) bool {
+	seal := filepath.Join(baseDir, "models", "seal_det", "inference.onnx")
+	_, err := os.Stat(seal)
+	return err == nil
+}
+
+// SealModelPath returns the path to the seal detection ONNX model.
+func SealModelPath(baseDir string) string {
+	return filepath.Join(baseDir, "models", "seal_det", "inference.onnx")
+}
+
 // ModelsDir returns the models directory path.
 func ModelsDir(baseDir string) string {
 	return filepath.Join(baseDir, "models")

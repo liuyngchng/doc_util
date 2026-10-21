@@ -146,7 +146,9 @@ Content-Type: application/json; charset=utf-8
 
 {
   "text": "提取的纯文本内容...",
-  "ocr_confidence": 0.95
+  "ocr_confidence": 0.95,
+  "has_seal": true,
+  "seal_text": ["北京XX科技有限公司", "财务专用章"]
 }
 ```
 
@@ -154,6 +156,15 @@ Content-Type: application/json; charset=utf-8
 |------|------|------|
 | `text` | string | 提取的全部文本（多页以换行分隔） |
 | `ocr_confidence` | float64 | 文档级加权平均置信度，0.0–1.0 |
+| `has_seal` | bool | 文档是否检测到印章（任意页面检测到即为 true） |
+| `seal_text` | []string | 印章区域 OCR 识别出的文字（已清洗去除识别 artifacts）；需要部署 OCR 模型 |
+
+#### 印章检测说明
+
+- 使用 PP-OCRv4 印章检测模型（`models/seal_det/inference.onnx`），检测页面中的圆形/椭圆形印章区域，然后对印章区域做 OCR 提取文字。
+- **PDF**：所有页面都做印章检测（印章是图形元素，MuPDF 文字提取无法获取）。有文字层的页面也会渲染为图片来检测印章。
+- **DOCX / .doc**：仅对内嵌图片做印章检测。
+- 若 OCR 模型或印章检测模型未部署，`seal_text` 返回空数组 `[]`、`has_seal` 为 `false`。
 
 #### 置信度说明
 
@@ -163,7 +174,7 @@ Content-Type: application/json; charset=utf-8
 
 #### 行为说明
 
-- **PDF**：优先用 MuPDF 提取文字层；纯扫描页（无文字层）渲染为图片后 OCR。
+- **PDF**：优先用 MuPDF 提取文字层；纯扫描页（无文字层）渲染为图片后 OCR。**所有页面**（无论有无文字层）都会渲染为图片做印章检测。
 - **DOCX**：解析正文文本，并对内嵌图片逐张 OCR，按文档顺序合并返回。
 - **.doc**：先调用 LibreOffice headless（`soffice --headless --convert-to docx`）转为 DOCX，再按 DOCX 流程提取；单次转换超时 60s。需要 Docker 镜像安装 `libreoffice-writer-nogui`。
 
@@ -172,6 +183,7 @@ Content-Type: application/json; charset=utf-8
 - **PDF 内嵌图片**：go-fitz 不暴露「提取页内嵌图片」的 API，因此「既有文字层又嵌了图片」的页面，只提取文字层，页内图片不会被单独 OCR；纯图片页（无文字层）会整页渲染后 OCR。
 - **DOCX**：仅处理正文 `word/document.xml` 与 `word/media/` 内嵌图片，不含页眉、页脚、脚注、文本框；无法解码的图片格式（如 EMF/WMF）会被跳过。
 - **.doc**：依赖 LibreOffice 转换质量，复杂排版（表格、多栏、嵌入对象）可能有差异。LibreOffice 未安装时返回 500 错误。
+- **印章检测**：仅检测圆形/椭圆形的印章区域并提取其文字，不判断印章类型（如「公章」「合同章」「财务章」）；印章文字识别依赖 OCR 模型，识别精度受印章颜色（红章在灰度/彩色渲染下的对比度）影响。
 
 ---
 
@@ -202,57 +214,57 @@ Content-Type: application/json; charset=utf-8
 ### 健康检查
 
 ```bash
-curl -s --noproxy "*" http://localhost:8080/health
+curl -s -k --noproxy "*" https://localhost:8443/health -w'\n'
 ```
 
 ### 截图版转换
 
 ```bash
-curl -X POST --noproxy "*" http://localhost:8080/convert/image \
+curl -X POST -k --noproxy "*" https://localhost:8443/convert/image \
   -F "file=@input.pdf" \
-  -o output.docx
+  -o output.docx -w'\n'
 ```
 
 ### 截图版转换（带热词标注）
 
 ```bash
-curl -X POST --noproxy "*" http://localhost:8080/convert/image \
+curl -X POST -k --noproxy "*" https://localhost:8443/convert/image \
   -F "file=@input.pdf" \
   -F "hotwords=关键词1,关键词2,关键词3" \
-  -o output.docx
+  -o output.docx -w'\n'
 ```
 
 ### 文字版转换
 
 ```bash
-curl -X POST --noproxy "*" http://localhost:8080/convert/text \
+curl -X POST -k --noproxy "*" https://localhost:8443/convert/text \
   -F "file=@input.pdf" \
-  -o output.text.docx
+  -o output.text.docx -w'\n'
 ```
 
 ### 纯文本提取
 
 ```bash
 # PDF
-curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
-  -F "file=@input.pdf"
+curl -X POST -k --noproxy "*" https://localhost:8443/extract/txt \
+  -F "file=@input.pdf" -w'\n'
 
 # DOCX
-curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
-  -F "file=@input.docx"
+curl -X POST -k --noproxy "*" https://localhost:8443/extract/txt \
+  -F "file=@input.docx" -w'\n'
 
 # .doc（旧版 Word）
-curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
-  -F "file=@document.doc"
+curl -X POST -k --noproxy "*" https://localhost:8443/extract/txt \
+  -F "file=@document.doc" -w'\n'
 ```
 
 ### 显示上传进度
 
 ```bash
-curl -X POST http://localhost:8080/convert/image \
+curl -X POST -k https://localhost:8443/convert/image \
   -F "file=@input.pdf" \
   -o output.docx \
-  --progress-bar
+  --progress-bar -w'\n'
 ```
 
 ### 验证结果

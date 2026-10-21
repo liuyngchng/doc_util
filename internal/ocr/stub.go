@@ -31,7 +31,41 @@ func (e *Engine) Recognize(img *Mat) (*PageText, error)      { return nil, errNo
 func (e *Engine) RecognizeWithBoxes(img *Mat) ([]TextLineWithBox, error) {
 	return nil, errNoOCR
 }
+func (e *Engine) RecognizeRegion(img *Mat, box OCRBox) ([]TextLine, error) {
+	return nil, errNoOCR
+}
 func (e *Engine) Release() {}
+
+// SealDetector is a stub for the seal detection model.
+type SealDetector struct{}
+
+// SealConfig is the stub config type for seal detection.
+type SealConfig struct {
+	ResizeLong    int
+	Thresh        float64
+	BoxThresh     float64
+	UnclipRatio   float64
+	MaxCandidates int
+}
+
+func DefaultSealConfig() SealConfig {
+	return SealConfig{
+		ResizeLong:    736,
+		Thresh:        0.2,
+		BoxThresh:     0.6,
+		UnclipRatio:   0.5,
+		MaxCandidates: 1000,
+	}
+}
+
+func NewSealDetector(modelPath string) (*SealDetector, error) {
+	return nil, errNoOCR
+}
+func NewSealDetectorWithConfig(modelPath string, cfg SealConfig) (*SealDetector, error) {
+	return nil, errNoOCR
+}
+func (s *SealDetector) Detect(img *Mat) ([]OCRBox, error) { return nil, errNoOCR }
+func (s *SealDetector) Release()                           {}
 
 // PaddleOCRConfig is the stub config type.
 type PaddleOCRConfig struct {

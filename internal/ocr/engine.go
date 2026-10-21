@@ -116,6 +116,35 @@ func (e *Engine) Recognize(img *Mat) (*PageText, error) {
 	return &PageText{Lines: textLines}, nil
 }
 
+// RecognizeRegion runs recognition on a pre-detected region (e.g. a seal box),
+// skipping the detection step. The box is in original image coordinates.
+func (e *Engine) RecognizeRegion(img *Mat, box OCRBox) ([]TextLine, error) {
+	crop := cropBox(img, box)
+	if crop == nil {
+		return nil, nil
+	}
+	defer crop.Release()
+
+	recResult, err := RecPreprocessBatch([]*Mat{crop})
+	if err != nil {
+		return nil, fmt.Errorf("rec preprocess: %w", err)
+	}
+
+	recOut, recShape, err := e.recSession.Run(recResult.TensorData, recResult.Shape)
+	if err != nil {
+		return nil, fmt.Errorf("rec inference: %w", err)
+	}
+
+	decoded := CTCDecode(recOut, recShape, e.characterList)
+	var lines []TextLine
+	for _, line := range decoded {
+		if line.Confidence >= e.detConfig.RecScoreThresh {
+			lines = append(lines, line)
+		}
+	}
+	return lines, nil
+}
+
 // RecognizeWithBoxes runs the full OCR pipeline and returns each recognized
 // line paired with its detected bounding box (in original image pixels).
 func (e *Engine) RecognizeWithBoxes(img *Mat) ([]TextLineWithBox, error) {
@@ -188,6 +217,87 @@ func (e *Engine) RecognizeWithBoxes(img *Mat) ([]TextLineWithBox, error) {
 	}
 
 	return allLines, nil
+}
+
+// SealDetector detects seal/stamp regions in a page image using the
+// PP-OCRv4 seal detection model (DB algorithm).  The output boxes are
+// coordinates in the original image.
+type SealDetector struct {
+	session   *ORTSession
+	config    SealConfig
+}
+
+// SealConfig holds runtime parameters for the seal detection model.
+type SealConfig struct {
+	ResizeLong     int
+	Thresh         float64
+	BoxThresh      float64
+	UnclipRatio    float64
+	MaxCandidates  int
+}
+
+// DefaultSealConfig returns the PP-OCRv4 seal detection defaults
+// (PP-OCRv4_mobile_seal_det inference.yml).
+func DefaultSealConfig() SealConfig {
+	return SealConfig{
+		ResizeLong:    736,
+		Thresh:        0.2,
+		BoxThresh:     0.6,
+		UnclipRatio:   0.5,
+		MaxCandidates: 1000,
+	}
+}
+
+// NewSealDetector loads the seal detection model from the given ONNX path.
+func NewSealDetector(modelPath string) (*SealDetector, error) {
+	return NewSealDetectorWithConfig(modelPath, DefaultSealConfig())
+}
+
+// NewSealDetectorWithConfig creates a seal detector with explicit config.
+func NewSealDetectorWithConfig(modelPath string, cfg SealConfig) (*SealDetector, error) {
+	detBytes, err := os.ReadFile(modelPath)
+	if err != nil {
+		return nil, fmt.Errorf("read seal det model: %w", err)
+	}
+	session, err := NewORTSession(detBytes, "x")
+	if err != nil {
+		return nil, fmt.Errorf("load seal det model: %w", err)
+	}
+	return &SealDetector{session: session, config: cfg}, nil
+}
+
+// Release frees the underlying ONNX session.
+func (s *SealDetector) Release() {
+	if s.session != nil {
+		s.session.Release()
+	}
+}
+
+// Detect runs seal detection on a page image and returns detected seal regions
+// (bounding boxes in original image pixels).
+func (s *SealDetector) Detect(img *Mat) ([]OCRBox, error) {
+	pre, err := DetPreprocessSeal(img, s.config.ResizeLong)
+	if err != nil {
+		return nil, fmt.Errorf("seal det preprocess: %w", err)
+	}
+
+	detOut, detShape, err := s.session.Run(pre.TensorData, pre.Shape)
+	if err != nil {
+		return nil, fmt.Errorf("seal det inference: %w", err)
+	}
+
+	post := DBPostProcessor{
+		Thresh:        s.config.Thresh,
+		BoxThresh:     s.config.BoxThresh,
+		UnclipRatio:   s.config.UnclipRatio,
+		MaxCandidates: s.config.MaxCandidates,
+		UseDilation:   false,
+	}
+	boxes, err := post.Process(detOut, detShape, pre.OriginalW, pre.OriginalH)
+	if err != nil {
+		return nil, fmt.Errorf("seal det postprocess: %w", err)
+	}
+	return boxes, nil
 }
 
 // cropBox crops a perspective-corrected region from the image for recognition.

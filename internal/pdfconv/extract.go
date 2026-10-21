@@ -38,8 +38,10 @@ const (
 // ExtractResult holds the text extracted from a document plus the average
 // OCR confidence across the document.
 type ExtractResult struct {
-	Text          string  `json:"text"`
-	OCRConfidence float64 `json:"ocr_confidence"`
+	Text          string   `json:"text"`
+	OCRConfidence float64  `json:"ocr_confidence"`
+	HasSeal       bool     `json:"has_seal"`
+	SealText      []string `json:"seal_text"`
 }
 
 // ExtractText processes a PDF, DOCX, or legacy .doc file and returns its full
@@ -208,6 +210,7 @@ type confTracker struct {
 	sb           strings.Builder
 	totalChars   int
 	weightedConf float64
+	sealTexts    []string
 }
 
 // addNative appends lines from a native text source (MuPDF text layer or DOCX
@@ -233,6 +236,11 @@ func (c *confTracker) addOCR(lines []string, conf float64) {
 	}
 }
 
+// addSeal appends seal texts found on the page.
+func (c *confTracker) addSeal(texts []string) {
+	c.sealTexts = append(c.sealTexts, texts...)
+}
+
 // pageSep adds a blank line between pages (no confidence contribution).
 func (c *confTracker) pageSep() {
 	// Only add separator when there is already content.
@@ -246,9 +254,12 @@ func (c *confTracker) result() *ExtractResult {
 	if c.totalChars > 0 {
 		conf = c.weightedConf / float64(c.totalChars)
 	}
+	hasSeal := len(c.sealTexts) > 0
 	return &ExtractResult{
 		Text:          c.sb.String(),
 		OCRConfidence: conf,
+		HasSeal:       hasSeal,
+		SealText:      c.sealTexts,
 	}
 }
 
@@ -257,6 +268,9 @@ func (c *confTracker) result() *ExtractResult {
 // extractPDFText extracts text from a PDF.  Each page is processed the
 // same way as ModeText conversion: native MuPDF text when present,
 // otherwise OCR on a 150 dpi render of the page.
+//
+// Seal detection runs on every page regardless of the text layer, because
+// seals (stamps) are graphical and do not appear in MuPDF's text output.
 func extractPDFText(path string) (*ExtractResult, error) {
 	doc, err := fitz.New(path)
 	if err != nil {
@@ -270,6 +284,7 @@ func extractPDFText(path string) (*ExtractResult, error) {
 	}
 
 	var ocrEngine *ocr.Engine
+	var sealDetector *ocr.SealDetector
 	tr := &confTracker{}
 
 	for i := 0; i < numPages; i++ {
@@ -290,14 +305,28 @@ func extractPDFText(path string) (*ExtractResult, error) {
 				}
 				defer ocrEngine.Release()
 			}
+		}
 
+		// Seal detection on every page.  Seals are graphical elements that
+		// MuPDF's text extraction cannot see, so we must render the page
+		// image whether or not a text layer exists.  If the page has a text
+		// layer the render cost is extra, but it is necessary to detect
+		// stamps.  On scanned pages the image is already rendered above and
+		// we reuse it.
+		if ocrEngine != nil {
 			img, err := doc.ImageDPI(i, 150)
 			if err != nil {
-				return nil, fmt.Errorf("render page %d for OCR: %w", i+1, err)
+				return nil, fmt.Errorf("render page %d: %w", i+1, err)
 			}
 
-			ocrLines, conf := runOCRPageWithConfidence(ocrEngine, img)
-			tr.addOCR(ocrLines, conf)
+			// Run OCR and seal detection on the same image.
+			if len(lines) == 0 {
+				ocrLines, conf := runOCRPageWithConfidence(ocrEngine, img)
+				tr.addOCR(ocrLines, conf)
+			}
+
+			sealTexts := runSealDetection(&sealDetector, ocrEngine, img)
+			tr.addSeal(sealTexts)
 		}
 
 		if i < numPages-1 {
@@ -306,6 +335,58 @@ func extractPDFText(path string) (*ExtractResult, error) {
 	}
 
 	return tr.result(), nil
+}
+
+// runSealDetection runs seal detection on a page image and OCRs any detected
+// seal regions. sealPtr is a lazily-initialised *ocr.SealDetector pointer.
+// Returns cleaned text lines from the seal regions.
+func runSealDetection(sealPtr **ocr.SealDetector, engine *ocr.Engine, img *image.RGBA) []string {
+	if sealPtr == nil || engine == nil {
+		return nil
+	}
+
+	baseDir, _ := os.Getwd()
+	if exe, err := os.Executable(); err == nil {
+		baseDir = filepath.Dir(exe)
+	}
+	if !ocr.CheckSealModel(baseDir) {
+		return nil
+	}
+
+	if *sealPtr == nil {
+		var err error
+		*sealPtr, err = ocr.NewSealDetector(ocr.SealModelPath(baseDir))
+		if err != nil {
+			slog.Warn("seal detection model not available", "error", err)
+			return nil
+		}
+	}
+
+	mat := ocr.NewMatFromRGBA(img)
+	if mat == nil {
+		return nil
+	}
+	defer mat.Release()
+
+	boxes, err := (*sealPtr).Detect(mat)
+	if err != nil || len(boxes) == 0 {
+		return nil
+	}
+
+	var sealTexts []string
+	for _, box := range boxes {
+		lines, err := engine.RecognizeRegion(mat, box)
+		if err != nil {
+			continue
+		}
+		for _, line := range lines {
+			cleaned := cleanOCRLine(line.Text)
+			if cleaned != "" {
+				sealTexts = append(sealTexts, cleaned)
+			}
+		}
+	}
+	return sealTexts
 }
 
 // ── DOCX text extraction ─────────────────────────────────────────────────
@@ -343,11 +424,15 @@ func extractDocxText(path string) (*ExtractResult, error) {
 		return nil, fmt.Errorf("parse document.xml: %w", err)
 	}
 
-	// 3. Walk segments: text → addNative; image → OCR → addOCR.
+	// 3. Walk segments: text → addNative; image → OCR + seal → addOCR.
 	var ocrEngine *ocr.Engine
+	var sealDetector *ocr.SealDetector
 	defer func() {
 		if ocrEngine != nil {
 			ocrEngine.Release()
+		}
+		if sealDetector != nil {
+			sealDetector.Release()
 		}
 	}()
 	tr := &confTracker{}
@@ -368,12 +453,16 @@ func extractDocxText(path string) (*ExtractResult, error) {
 			continue
 		}
 
-		ocrLines, conf, err := ocrImageFromZip(zr, mediaPath, &ocrEngine)
+		ocrLines, conf, sealTexts, err := ocrImageWithSealFromZip(zr, mediaPath, &ocrEngine, &sealDetector)
 		if err != nil {
-			// Skip images that cannot be decoded (e.g. EMF/WMF).
+			// Skip images that cannot be decoded (e.g. EMF/WMF)
+			// or produced no text and no seals.
 			continue
 		}
 		tr.addOCR(ocrLines, conf)
+		if len(sealTexts) > 0 {
+			tr.addSeal(sealTexts)
+		}
 	}
 
 	return tr.result(), nil
@@ -508,31 +597,31 @@ func flushParagraph(segments *[]docxSegment, curText *strings.Builder, imageRID 
 
 // ── Image OCR helper ────────────────────────────────────────────────────
 
-// ocrImageFromZip reads an image from a zip archive, decodes it to RGBA, and
-// runs OCR on it. enginePtr is a lazily-initialised *ocr.Engine pointer.
-// Returns cleaned text lines and average confidence.
-func ocrImageFromZip(zr *zip.ReadCloser, mediaPath string, enginePtr **ocr.Engine) ([]string, float64, error) {
+// ocrImageWithSealFromZip reads an image from a zip archive, decodes it to
+// RGBA, runs OCR and seal detection on it. enginePtr and sealPtr are
+// lazily-initialised. Returns cleaned text lines, average confidence, and
+// any seal texts detected.
+func ocrImageWithSealFromZip(zr *zip.ReadCloser, mediaPath string, enginePtr **ocr.Engine, sealPtr **ocr.SealDetector) ([]string, float64, []string, error) {
 	f, err := openZipFile(zr, mediaPath)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer f.Close()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return nil, 0, fmt.Errorf("read %s: %w", mediaPath, err)
+		return nil, 0, nil, fmt.Errorf("read %s: %w", mediaPath, err)
 	}
 
-	return ocrImageBytes(data, enginePtr)
+	return ocrImageBytesWithSeal(data, enginePtr, sealPtr)
 }
 
-// ocrImageBytes decodes an image (any format supported by Go's image
-// package plus BMP/TIFF/WebP via x/image) and runs OCR on it.
-// Returns cleaned text lines and average confidence.
-func ocrImageBytes(data []byte, enginePtr **ocr.Engine) ([]string, float64, error) {
+// ocrImageBytesWithSeal decodes an image and runs OCR + seal detection.
+// Returns cleaned text lines, average confidence, and any seal texts.
+func ocrImageBytesWithSeal(data []byte, enginePtr **ocr.Engine, sealPtr **ocr.SealDetector) ([]string, float64, []string, error) {
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, 0, fmt.Errorf("decode image: %w", err)
+		return nil, 0, nil, fmt.Errorf("decode image: %w", err)
 	}
 
 	rgba := image.NewRGBA(src.Bounds())
@@ -541,15 +630,22 @@ func ocrImageBytes(data []byte, enginePtr **ocr.Engine) ([]string, float64, erro
 	if *enginePtr == nil {
 		*enginePtr, err = initOCREngine()
 		if err != nil {
-			return nil, 0, fmt.Errorf("init OCR: %w", err)
+			return nil, 0, nil, fmt.Errorf("init OCR: %w", err)
 		}
 	}
 
 	lines, conf := runOCRPageWithConfidence(*enginePtr, rgba)
-	if len(lines) == 0 {
-		return nil, 0, fmt.Errorf("OCR produced no text")
+	if len(lines) == 0 && sealPtr == nil {
+		return nil, 0, nil, fmt.Errorf("OCR produced no text")
 	}
-	return lines, conf, nil
+
+	// Seal detection on the same image.
+	var sealTexts []string
+	if sealPtr != nil {
+		sealTexts = runSealDetection(sealPtr, *enginePtr, rgba)
+	}
+
+	return lines, conf, sealTexts, nil
 }
 
 // ── Zip helpers ──────────────────────────────────────────────────────────
