@@ -2,12 +2,13 @@
 
 ## 概述
 
-HTTP 服务，接收 PDF 文件，返回转换后的 DOCX 文件。提供两种转换模式：
+HTTP 服务，接收 PDF / DOCX 文件，返回转换结果。提供三种能力：
 
 | 端点 | 模式 | 产出 | 说明 |
 |------|------|------|------|
 | `/convert/image` | 截图版 | `.docx` | 每页渲染为图片嵌入 Word，始终可用；支持热词红色下划线标注 |
 | `/convert/text` | 文字版 | `.text.docx` | 提取文字（有文字层的 PDF 直接提取，扫描件 OCR），需要 OCR 模型 |
+| `/extract/txt` | 纯文本 | JSON | 提取 PDF / DOCX 的全部文本及 OCR 置信度，供其他服务调用 |
 
 ---
 
@@ -116,6 +117,56 @@ Content-Disposition: attachment; filename="xxx.text.docx"
 
 ---
 
+### 4. 纯文本提取
+
+```
+POST /extract/txt
+Content-Type: multipart/form-data
+```
+
+接收 PDF 或 DOCX 文件，返回其中全部文本及 OCR 置信度（JSON）。文件类型根据内容自动识别，不依赖文件名。图片中的文字会通过 OCR 提取。
+
+**请求**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | file | 是 | 要提取的 PDF 或 DOCX 文件，最大 64 MB |
+
+**成功响应**
+
+```
+200 OK
+Content-Type: application/json; charset=utf-8
+
+{
+  "text": "提取的纯文本内容...",
+  "ocr_confidence": 0.95
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `text` | string | 提取的全部文本（多页以换行分隔） |
+| `ocr_confidence` | float64 | 文档级加权平均置信度，0.0–1.0 |
+
+#### 置信度说明
+
+- **1.0**：纯文本提取（PDF 文字层、DOCX 正文文本），无 OCR 参与。
+- **0.0–1.0**：部分或全部内容来自 OCR，值越低说明识别越不可靠。
+- 计算方式：以每个字符数为权重，对各行置信度做加权平均。OCR 行的置信度为模型返回的行级置信度；原生文本行固定为 1.0。
+
+#### 行为说明
+
+- **PDF**：优先用 MuPDF 提取文字层；纯扫描页（无文字层）渲染为图片后 OCR。
+- **DOCX**：解析正文文本，并对内嵌图片逐张 OCR，按文档顺序合并返回。
+
+#### 已知限制
+
+- **PDF 内嵌图片**：go-fitz 不暴露「提取页内嵌图片」的 API，因此「既有文字层又嵌了图片」的页面，只提取文字层，页内图片不会被单独 OCR；纯图片页（无文字层）会整页渲染后 OCR。
+- **DOCX**：仅处理正文 `word/document.xml` 与 `word/media/` 内嵌图片，不含页眉、页脚、脚注、文本框；无法解码的图片格式（如 EMF/WMF）会被跳过。
+
+---
+
 ### 错误响应
 
 | 状态码 | 说明 |
@@ -166,6 +217,18 @@ curl -X POST --noproxy "*" http://localhost:8080/convert/text \
   -o output.text.docx
 ```
 
+### 纯文本提取
+
+```bash
+# PDF
+curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
+  -F "file=@input.pdf"
+
+# DOCX
+curl -X POST --noproxy "*" http://localhost:8080/extract/txt \
+  -F "file=@input.docx"
+```
+
 
 
 ### 显示上传进度
@@ -189,6 +252,6 @@ file output.docx
 
 ## 限制
 
-- PDF 最大 64 MB
+- 上传文件最大 64 MB
 - 不支持加密 PDF
 - 读写超时：请求 60 秒，响应 300 秒

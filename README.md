@@ -189,7 +189,7 @@ models/
 
 ### Server
 
-Server 提供两个独立的转换接口：
+Server 提供三个接口，支持 PDF 和 DOCX 输入：
 
 ```bash
 # 启动服务
@@ -210,6 +210,10 @@ curl -X POST http://localhost:8080/convert/image \
 curl -X POST http://localhost:8080/convert/text \
   -F "file=@input.pdf" \
   -o output.text.docx
+
+# 纯文本提取（返回 JSON，含 OCR 置信度）
+curl -X POST http://localhost:8080/extract/txt \
+  -F "file=@input.pdf"
 ```
 
 ### MCP Server
@@ -301,6 +305,7 @@ pdf2docx/
 ├── internal/
 │   ├── pdfconv/
 │   │   ├── convert.go          # PDF → 图片 → docx 主流程（含 OCR 集成）
+│   │   ├── extract.go           # PDF / DOCX → 纯文本提取（含置信度）
 │   │   ├── docx.go             # 手写 OOXML 打包（截图版）
 │   │   └── docx_text.go        # 手写 OOXML 打包（OCR 文字版）
 │   └── ocr/

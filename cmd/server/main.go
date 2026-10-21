@@ -4,13 +4,15 @@
 //
 //	./build_server.sh
 //
-// The server exposes two conversion modes:
+// The server exposes three endpoints:
 //
 //	POST /convert/image  → screenshot DOCX (always works)
 //	POST /convert/text   → text-layer DOCX (extract text for native PDFs, OCR for scans)
+//	POST /extract/txt    → plain text string (PDF or DOCX input; OCR for image-only content)
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -36,6 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /convert/image", handleConvertImage)
 	mux.HandleFunc("POST /convert/text", handleConvertText)
+	mux.HandleFunc("POST /extract/txt", handleExtractTxt)
 	mux.HandleFunc("GET /health", handleHealth)
 
 	srv := &http.Server{
@@ -98,60 +101,49 @@ func handleConvertText(w http.ResponseWriter, r *http.Request) {
 	convertAndServe(w, r, pdfconv.ModeText, nil)
 }
 
-func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.ConvertMode, hotwords []string) {
-	// Limit upload to 64 MB.
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		slog.Warn("parse multipart failed", "error", err)
-		http.Error(w, fmt.Sprintf("failed to parse form: %v", err), http.StatusBadRequest)
-		return
-	}
-	defer r.MultipartForm.RemoveAll()
-
-	file, header, err := r.FormFile("file")
+func handleExtractTxt(w http.ResponseWriter, r *http.Request) {
+	pdfTmp, _, err := saveUpload(w, r)
 	if err != nil {
-		slog.Warn("missing file field", "error", err)
-		http.Error(w, "missing file field", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer os.Remove(pdfTmp)
+
+	result, err := pdfconv.ExtractText(pdfTmp)
+	if err != nil {
+		slog.Error("extract text failed", "error", err)
+		http.Error(w, fmt.Sprintf("extract text failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(result)
+}
+
+func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.ConvertMode, hotwords []string) {
+	pdfTmp, headerFilename, err := saveUpload(w, r)
+	if err != nil {
+		return
+	}
+	defer os.Remove(pdfTmp)
 
 	slog.Info("conversion started",
-		"filename", header.Filename,
-		"size_bytes", header.Size,
+		"filename", headerFilename,
 		"mode", mode,
 	)
-
-	// Write upload to a temp file.
-	pdfTmp, err := os.CreateTemp("", "pdf2docx-*.pdf")
-	if err != nil {
-		slog.Error("create temp file failed", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	defer os.Remove(pdfTmp.Name())
-
-	if _, err := io.Copy(pdfTmp, file); err != nil {
-		pdfTmp.Close()
-		slog.Error("write temp file failed", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	pdfTmp.Close()
 
 	// Convert.
 	convStart := time.Now()
 	var docxPath string
 	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
-		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp.Name(), mode, hotwords, func(pct float64) {})
+		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp, mode, hotwords, func(pct float64) {})
 	} else {
-		docxPath, err = pdfconv.Convert(pdfTmp.Name(), mode, func(pct float64) {})
+		docxPath, err = pdfconv.Convert(pdfTmp, mode, func(pct float64) {})
 	}
 	convDuration := time.Since(convStart)
 
 	if err != nil {
 		slog.Error("conversion failed",
-			"filename", header.Filename,
+			"filename", headerFilename,
 			"error", err,
 			"duration_ms", convDuration.Milliseconds(),
 			"mode", mode,
@@ -162,7 +154,7 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 	defer os.Remove(docxPath)
 
 	slog.Info("conversion done",
-		"filename", header.Filename,
+		"filename", headerFilename,
 		"output", filepath.Base(docxPath),
 		"duration_ms", convDuration.Milliseconds(),
 		"mode", mode,
@@ -170,7 +162,7 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 
 	// Stream the generated .docx back.
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, docxFilename(header.Filename, mode)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, docxFilename(headerFilename, mode)))
 
 	docxF, err := os.Open(docxPath)
 	if err != nil {
@@ -183,6 +175,54 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 	if _, err := io.Copy(w, docxF); err != nil {
 		slog.Warn("stream response interrupted", "error", err)
 	}
+}
+
+// saveUpload reads a multipart file upload and writes it to a temp file.
+// On success it returns the temp file path and original filename.
+// On error it writes the HTTP error and returns a non-nil err.
+func saveUpload(w http.ResponseWriter, r *http.Request) (tmpPath, filename string, err error) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		slog.Warn("parse multipart failed", "error", err)
+		http.Error(w, fmt.Sprintf("failed to parse form: %v", err), http.StatusBadRequest)
+		return "", "", err
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		slog.Warn("missing file field", "error", err)
+		http.Error(w, "missing file field", http.StatusBadRequest)
+		return "", "", err
+	}
+	defer file.Close()
+
+	// Preserve the original extension for correct MIME/magic detection.
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".tmp"
+	}
+	tmp, err := os.CreateTemp("", "pdf2docx-*"+ext)
+	if err != nil {
+		slog.Error("create temp file failed", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return "", "", err
+	}
+
+	if _, err := io.Copy(tmp, file); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		slog.Error("write temp file failed", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return "", "", err
+	}
+	tmp.Close()
+
+	slog.Info("upload saved",
+		"filename", header.Filename,
+		"size_bytes", header.Size,
+	)
+	return tmp.Name(), header.Filename, nil
 }
 
 func docxFilename(pdfName string, mode pdfconv.ConvertMode) string {

@@ -425,28 +425,45 @@ func initOCREngine() (*ocr.Engine, error) {
 // ── OCR page helper ─────────────────────────────────────────────────────────
 
 func runOCRPage(engine *ocr.Engine, img *image.RGBA) []string {
+	lines, _ := runOCRPageWithConfidence(engine, img)
+	return lines
+}
+
+// runOCRPageWithConfidence runs OCR on a page image and returns the cleaned
+// text lines plus the average confidence (0–1), weighted by line length.
+func runOCRPageWithConfidence(engine *ocr.Engine, img *image.RGBA) ([]string, float64) {
 	mat := ocr.NewMatFromRGBA(img)
 	if mat == nil {
-		return nil
+		return nil, 0
 	}
 	defer mat.Release()
 
 	pageText, err := engine.Recognize(mat)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "OCR page failed: %v\n", err)
-		return nil
+		return nil, 0
 	}
 
 	// Clean and merge recognized text lines.
 	var cleaned []string
+	var weightedConf float64
+	var totalChars int
 	for _, l := range pageText.Lines {
 		t := cleanOCRLine(l.Text)
 		if t == "" {
 			continue
 		}
 		cleaned = append(cleaned, t)
+
+		chars := len([]rune(t))
+		weightedConf += float64(l.Confidence) * float64(chars)
+		totalChars += chars
 	}
-	return cleaned
+
+	if totalChars == 0 {
+		return cleaned, 0
+	}
+	return cleaned, weightedConf / float64(totalChars)
 }
 
 // ── OCR text cleanup ────────────────────────────────────────────────────────
