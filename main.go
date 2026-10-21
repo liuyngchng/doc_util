@@ -17,6 +17,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/go-gl/glfw/v3.4/glfw"
+
 	"docutil/internal/ocr"
 	"docutil/internal/pdfconv"
 )
@@ -57,9 +59,18 @@ func main() {
 	}
 	defer unlock()
 
-	// 强制使用中文界面
-	os.Setenv("LANG", "zh_CN.UTF-8")
-	os.Setenv("LC_ALL", "zh_CN.UTF-8")
+	// GLFW 必须在使用窗口提示前初始化。X11 下若不显式指定 ASCII 的
+	// WM_CLASS，GLFW 会用中文标题作为 ICCCM WM_CLASS 属性，导致窗口
+	// 管理器把标题显示成乱码。Fyne 后续的 glfw.Init() 是无害的 no-op。
+	if err := glfw.Init(); err != nil {
+		fyne.LogError("GLFW 初始化失败", err)
+		os.Exit(1)
+	}
+	defer glfw.Terminate()
+	glfw.WindowHintString(glfw.X11InstanceName, "docutil")
+	glfw.WindowHintString(glfw.X11ClassName, "DocUtil")
+
+	// 设置中文 locale，GLFW/X11 需要此 locale 才能正确渲染中文窗口标题
 	lang.AddTranslationsForLocale([]byte(`{}`), fyne.Locale("zh"))
 
 	// 自定义主题：加大文件选择对话框中"取消"和"打开"按钮之间的间距
