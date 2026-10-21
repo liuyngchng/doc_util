@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"docutil/internal/ocr"
 	"docutil/internal/pdfconv"
 )
 
@@ -52,6 +53,19 @@ func main() {
 		Level: slogLevel(),
 	}))
 	slog.SetDefault(slogger)
+
+	// Verify all required OCR models are present before serving. The server
+	// always integrates OCR (text conversion, extraction, seal detection), so
+	// a missing model is a fatal startup error. Models are still lazily
+	// loaded at runtime.
+	baseDir, _ := os.Getwd()
+	if exe, err := os.Executable(); err == nil {
+		baseDir = filepath.Dir(exe)
+	}
+	if err := ocr.CheckAllModels(baseDir); err != nil {
+		slog.Error("required OCR models not found", "error", err)
+		os.Exit(1)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -137,6 +137,24 @@ func CheckModels(baseDir string) bool {
 	return err1 == nil && err2 == nil && err3 == nil
 }
 
+// CheckAllModels returns nil when all required models exist (detection,
+// recognition and seal detection). It returns an error naming the first
+// missing file otherwise.
+func CheckAllModels(baseDir string) error {
+	required := []string{
+		filepath.Join(baseDir, "models", "det", "inference.onnx"),
+		filepath.Join(baseDir, "models", "rec", "inference.onnx"),
+		filepath.Join(baseDir, "models", "rec", "inference.yml"),
+		filepath.Join(baseDir, "models", "seal_det", "inference.onnx"),
+	}
+	for _, p := range required {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("required model missing: %s", p)
+		}
+	}
+	return nil
+}
+
 // CheckSealModel returns true if the seal detection model file exists.
 func CheckSealModel(baseDir string) bool {
 	seal := filepath.Join(baseDir, "models", "seal_det", "inference.onnx")

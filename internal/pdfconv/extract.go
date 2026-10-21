@@ -254,12 +254,16 @@ func (c *confTracker) result() *ExtractResult {
 	if c.totalChars > 0 {
 		conf = c.weightedConf / float64(c.totalChars)
 	}
+	sealTexts := c.sealTexts
+	if sealTexts == nil {
+		sealTexts = []string{}
+	}
 	hasSeal := len(c.sealTexts) > 0
 	return &ExtractResult{
 		Text:          c.sb.String(),
 		OCRConfidence: conf,
 		HasSeal:       hasSeal,
-		SealText:      c.sealTexts,
+		SealText:      sealTexts,
 	}
 }
 
@@ -294,10 +298,20 @@ func extractPDFText(path string) (*ExtractResult, error) {
 		}
 
 		lines := nonEmptyLines(pageText)
+
+		// Render the page image once; reused for OCR (scanned pages) and
+		// seal detection (every page).  Seals are graphical elements that
+		// MuPDF's text extraction cannot see, so every page is rendered
+		// regardless of the text layer.
+		img, err := doc.ImageDPI(i, 150)
+		if err != nil {
+			return nil, fmt.Errorf("render page %d: %w", i+1, err)
+		}
+
 		if len(lines) > 0 {
 			tr.addNative(lines)
 		} else {
-			// No text layer — OCR.
+			// No text layer — OCR. Initialise the engine first.
 			if ocrEngine == nil {
 				ocrEngine, err = initOCREngine()
 				if err != nil {
@@ -305,26 +319,21 @@ func extractPDFText(path string) (*ExtractResult, error) {
 				}
 				defer ocrEngine.Release()
 			}
+
+			ocrLines, conf := runOCRPageWithConfidence(ocrEngine, img)
+			tr.addOCR(ocrLines, conf)
 		}
 
-		// Seal detection on every page.  Seals are graphical elements that
-		// MuPDF's text extraction cannot see, so we must render the page
-		// image whether or not a text layer exists.  If the page has a text
-		// layer the render cost is extra, but it is necessary to detect
-		// stamps.  On scanned pages the image is already rendered above and
-		// we reuse it.
+		// Seal detection on every page.  It also needs the OCR engine for
+		// seal-text recognition, so initialise it best-effort when not
+		// already loaded (e.g. text-layer-only documents).
+		if ocrEngine == nil {
+			if eng, err := initOCREngine(); err == nil {
+				ocrEngine = eng
+				defer ocrEngine.Release()
+			}
+		}
 		if ocrEngine != nil {
-			img, err := doc.ImageDPI(i, 150)
-			if err != nil {
-				return nil, fmt.Errorf("render page %d: %w", i+1, err)
-			}
-
-			// Run OCR and seal detection on the same image.
-			if len(lines) == 0 {
-				ocrLines, conf := runOCRPageWithConfidence(ocrEngine, img)
-				tr.addOCR(ocrLines, conf)
-			}
-
 			sealTexts := runSealDetection(&sealDetector, ocrEngine, img)
 			tr.addSeal(sealTexts)
 		}
