@@ -71,8 +71,8 @@ func ParseModelConfig(ymlPath string) (*ModelConfig, error) {
 		line := lines[i]
 		indent := leadingSpaces(line)
 		content := line[indent:]
-		trimmed := strings.TrimSpace(content)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		// Skip empty lines and comments.
+		if content == "" || strings.HasPrefix(content, "#") {
 			continue
 		}
 		if !strings.HasPrefix(content, "-") {
@@ -81,7 +81,10 @@ func ParseModelConfig(ymlPath string) (*ModelConfig, error) {
 			}
 			continue
 		}
-		char := parseYamlListScalar(strings.TrimPrefix(content, " "))
+		// Strip the YAML list marker "- " (dash + optional spaces).
+		valueStr := strings.TrimPrefix(content, "-")
+		valueStr = strings.TrimLeft(valueStr, " ")
+		char := parseYamlListScalar(valueStr)
 		chars = append(chars, char)
 	}
 
@@ -110,7 +113,11 @@ func leadingSpaces(s string) int {
 }
 
 func parseYamlListScalar(s string) string {
-	s = strings.TrimSpace(s)
+	// Trim only YAML whitespace (space U+0020 and tab U+0009).  Unlike
+	// strings.TrimSpace, this preserves Unicode whitespace such as the
+	// full-width space U+3000 that PP-OCRv5 uses as a valid dictionary
+	// character.
+	s = strings.Trim(s, " \t")
 	if len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'' {
 		return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
 	}
