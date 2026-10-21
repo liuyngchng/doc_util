@@ -147,16 +147,27 @@ rm -rf "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
 cp -a "$ONNXRT_LIB/lib/libonnxruntime.so"* "$SCRIPT_DIR/dist/"
 cp -r "$SCRIPT_DIR/models" "$SCRIPT_DIR/dist/models"
 
+# Generate self-signed TLS certificate (idempotent: skips if already present).
+"$SCRIPT_DIR/scripts/gen_cert.sh"
+cp -a "$SCRIPT_DIR/certs/cert.pem" "$SCRIPT_DIR/certs/key.pem" "$SCRIPT_DIR/dist/"
+
 echo ""
 echo "=== Step 2/2: Building Docker image pdf2docx-server:latest ==="
 docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t pdf2docx-server:latest -f scripts/Dockerfile.server "$SCRIPT_DIR"
 
-# Clean up intermediate files from dist/.
-rm -rf "$SCRIPT_DIR/dist/pdf2docx-server" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
+# Clean up intermediate files from dist/ (keep certs/ as durable assets).
+rm -rf "$SCRIPT_DIR/dist/pdf2docx-server" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models" "$SCRIPT_DIR"/dist/cert.pem "$SCRIPT_DIR"/dist/key.pem
 
 echo ""
 echo "=== Done ==="
 echo "  Docker image: pdf2docx-server:latest"
 echo ""
 echo "Run with:"
-echo "  docker run -p 8080:8080 pdf2docx-server:latest"
+echo "  docker run -d --rm --name pdf2docx-server -p 8443:8080 \\"
+echo "    -v \$(pwd)/logs:/app/logs \\"
+echo "    pdf2docx-server:latest"
+echo "  docker logs -f pdf2docx-server"
+echo ""
+echo "HTTPS enabled by default (self-signed cert for localhost)."
+echo "  Health check: curl -k https://localhost:8443/health"
+echo "  Logs on host:  cat logs/server.log"

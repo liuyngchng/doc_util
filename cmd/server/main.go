@@ -25,7 +25,26 @@ import (
 )
 
 func main() {
-	slogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	// Default handler writes to stderr so docker logs works.
+	logWriters := []io.Writer{os.Stderr}
+
+	// If LOG_DIR is set, also write to a rotating daily log file.
+	if logDir := os.Getenv("LOG_DIR"); logDir != "" {
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "WARN: cannot create LOG_DIR %s: %v\n", logDir, err)
+		} else {
+			logFile := filepath.Join(logDir, "server.log")
+			f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "WARN: cannot open log file %s: %v\n", logFile, err)
+			} else {
+				logWriters = append(logWriters, f)
+				fmt.Fprintf(os.Stderr, "Logging to %s\n", logFile)
+			}
+		}
+	}
+
+	slogger := slog.New(slog.NewTextHandler(io.MultiWriter(logWriters...), &slog.HandlerOptions{
 		Level: slogLevel(),
 	}))
 	slog.SetDefault(slogger)
@@ -50,6 +69,24 @@ func main() {
 	}
 
 	slog.Info("server starting", "port", port)
+	certFile := os.Getenv("TLS_CERT_FILE")
+	keyFile := os.Getenv("TLS_KEY_FILE")
+	if certFile != "" && keyFile != "" {
+		// Verify files exist before switching to TLS.
+		if _, err := os.Stat(certFile); err != nil {
+			slog.Warn("TLS_CERT_FILE set but not found, falling back to HTTP", "file", certFile, "error", err)
+		} else if _, err := os.Stat(keyFile); err != nil {
+			slog.Warn("TLS_KEY_FILE set but not found, falling back to HTTP", "file", keyFile, "error", err)
+		} else {
+			slog.Info("TLS enabled", "cert", certFile, "key", keyFile)
+			if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil {
+				slog.Error("server fatal", "error", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server fatal", "error", err)
 		os.Exit(1)

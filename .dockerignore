@@ -24,6 +24,9 @@ build/gocache
 build/gocache_dev
 build/gomodcache
 
+# 自签名证书源（构建脚本会先复制到 dist/ 再进镜像）
+certs
+
 # 构建产物（server/MCP 镜像只需要 dist/ 下的 server 二进制、onnxruntime、models）
 vendor
 dist/*.tar
