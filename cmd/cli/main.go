@@ -14,11 +14,12 @@ import (
 	"fmt"
 	"os"
 
-	"docutil/internal/pdfconv"
+	"docutil/internal/doc"
+	"docutil/internal/pdf"
 )
 
 func main() {
-	mode := pdfconv.ModeImage
+	mode := doc.ModeImage
 	var pdfPath string
 	var hotwordsArg string
 
@@ -26,7 +27,7 @@ func main() {
 		switch arg {
 		case "--ocr":
 			// Backward compatible alias for --mode text.
-			mode = pdfconv.ModeText
+			mode = doc.ModeText
 		case "--mode":
 			// Consumed below via positional check.
 		case "--hotwords":
@@ -41,9 +42,9 @@ func main() {
 		if os.Args[i] == "--mode" && i+1 < len(os.Args) {
 			switch os.Args[i+1] {
 			case "image":
-				mode = pdfconv.ModeImage
+				mode = doc.ModeImage
 			case "text":
-				mode = pdfconv.ModeText
+				mode = doc.ModeText
 			default:
 				fmt.Fprintf(os.Stderr, "Unknown mode: %s (valid: image, text)\n", os.Args[i+1])
 				os.Exit(1)
@@ -59,10 +60,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	hotwords := pdfconv.ParseHotwords(hotwordsArg)
+	hotwords := doc.ParseHotwords(hotwordsArg)
 
 	modeLabel := "image"
-	if mode == pdfconv.ModeText {
+	if mode == doc.ModeText {
 		modeLabel = "text"
 	}
 	fmt.Printf("Converting: %s (mode: %s)", pdfPath, modeLabel)
@@ -73,12 +74,12 @@ func main() {
 
 	var docxPath string
 	var err error
-	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
-		docxPath, err = pdfconv.ConvertWithHotwords(pdfPath, mode, hotwords, func(pct float64) {
+	if len(hotwords) > 0 && mode == doc.ModeImage {
+		docxPath, err = pdf.ConvertWithHotwords(pdfPath, mode, hotwords, func(pct float64) {
 			showProgress(pct)
 		})
 	} else {
-		docxPath, err = pdfconv.Convert(pdfPath, mode, func(pct float64) {
+		docxPath, err = pdf.Convert(pdfPath, mode, func(pct float64) {
 			showProgress(pct)
 		})
 	}

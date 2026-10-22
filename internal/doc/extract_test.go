@@ -1,4 +1,4 @@
-package pdfconv
+package doc
 
 import (
 	"strings"
@@ -6,9 +6,9 @@ import (
 )
 
 func TestConfTrackerNativeOnly(t *testing.T) {
-	tr := &confTracker{}
-	tr.addNative([]string{"hello", "世界"})
-	r := tr.result()
+	tr := &ConfTracker{}
+	tr.AddNative([]string{"hello", "世界"})
+	r := tr.Result()
 
 	if r.Text != "hello\n世界\n" {
 		t.Fatalf("text = %q, want %q", r.Text, "hello\n世界\n")
@@ -19,10 +19,10 @@ func TestConfTrackerNativeOnly(t *testing.T) {
 }
 
 func TestConfTrackerOCROnly(t *testing.T) {
-	tr := &confTracker{}
-	tr.addOCR([]string{"abc"}, 0.8)
-	tr.addOCR([]string{"defg"}, 0.6)
-	r := tr.result()
+	tr := &ConfTracker{}
+	tr.AddOCR([]string{"abc"}, 0.8)
+	tr.AddOCR([]string{"defg"}, 0.6)
+	r := tr.Result()
 
 	if r.Text != "abc\ndefg\n" {
 		t.Fatalf("text = %q", r.Text)
@@ -36,10 +36,10 @@ func TestConfTrackerOCROnly(t *testing.T) {
 }
 
 func TestConfTrackerMixed(t *testing.T) {
-	tr := &confTracker{}
-	tr.addNative([]string{"原生文本"})   // 4 chars, conf=1.0
-	tr.addOCR([]string{"abc"}, 0.9)     // 3 chars, conf=0.9
-	r := tr.result()
+	tr := &ConfTracker{}
+	tr.AddNative([]string{"原生文本"}) // 4 chars, conf=1.0
+	tr.AddOCR([]string{"abc"}, 0.9) // 3 chars, conf=0.9
+	r := tr.Result()
 
 	// weighted: 4*1.0 + 3*0.9 = 6.7 / 7 = 0.9571...
 	expected := (4*1.0 + 3*0.9) / 7.0
@@ -49,8 +49,8 @@ func TestConfTrackerMixed(t *testing.T) {
 }
 
 func TestConfTrackerEmpty(t *testing.T) {
-	tr := &confTracker{}
-	r := tr.result()
+	tr := &ConfTracker{}
+	r := tr.Result()
 	if r.Text != "" {
 		t.Fatalf("text should be empty, got %q", r.Text)
 	}
@@ -68,14 +68,14 @@ func TestParseDocumentXMLTextOnly(t *testing.T) {
   </w:body>
 </w:document>`
 
-	segs, err := parseDocumentXML(strings.NewReader(xml))
+	segs, err := ParseDocumentXML(strings.NewReader(xml))
 	if err != nil {
-		t.Fatalf("parseDocumentXML: %v", err)
+		t.Fatalf("ParseDocumentXML: %v", err)
 	}
 
-	want := []docxSegment{
-		{text: "第一段"},
-		{text: "第二段"},
+	want := []DocxSegment{
+		{Text: "第一段"},
+		{Text: "第二段"},
 	}
 	assertSegments(t, segs, want)
 }
@@ -96,13 +96,13 @@ func TestParseDocumentXMLImageOnly(t *testing.T) {
   </w:body>
 </w:document>`
 
-	segs, err := parseDocumentXML(strings.NewReader(xml))
+	segs, err := ParseDocumentXML(strings.NewReader(xml))
 	if err != nil {
-		t.Fatalf("parseDocumentXML: %v", err)
+		t.Fatalf("ParseDocumentXML: %v", err)
 	}
 
-	want := []docxSegment{
-		{image: "rId4"},
+	want := []DocxSegment{
+		{Image: "rId4"},
 	}
 	assertSegments(t, segs, want)
 }
@@ -121,15 +121,15 @@ func TestParseDocumentXMLMixedOrder(t *testing.T) {
   </w:body>
 </w:document>`
 
-	segs, err := parseDocumentXML(strings.NewReader(xml))
+	segs, err := ParseDocumentXML(strings.NewReader(xml))
 	if err != nil {
-		t.Fatalf("parseDocumentXML: %v", err)
+		t.Fatalf("ParseDocumentXML: %v", err)
 	}
 
-	want := []docxSegment{
-		{text: "前文"},
-		{image: "rId7"},
-		{text: "后文"},
+	want := []DocxSegment{
+		{Text: "前文"},
+		{Image: "rId7"},
+		{Text: "后文"},
 	}
 	assertSegments(t, segs, want)
 }
@@ -147,13 +147,13 @@ func TestParseDocumentXMLMultipleRuns(t *testing.T) {
   </w:body>
 </w:document>`
 
-	segs, err := parseDocumentXML(strings.NewReader(xml))
+	segs, err := ParseDocumentXML(strings.NewReader(xml))
 	if err != nil {
-		t.Fatalf("parseDocumentXML: %v", err)
+		t.Fatalf("ParseDocumentXML: %v", err)
 	}
 
-	want := []docxSegment{
-		{text: "甲乙丙"},
+	want := []DocxSegment{
+		{Text: "甲乙丙"},
 	}
 	assertSegments(t, segs, want)
 }
@@ -169,18 +169,18 @@ func TestParseDocumentXMLLineBreak(t *testing.T) {
   </w:body>
 </w:document>`
 
-	segs, err := parseDocumentXML(strings.NewReader(xml))
+	segs, err := ParseDocumentXML(strings.NewReader(xml))
 	if err != nil {
-		t.Fatalf("parseDocumentXML: %v", err)
+		t.Fatalf("ParseDocumentXML: %v", err)
 	}
 
-	want := []docxSegment{
-		{text: "第一行\n第二行"},
+	want := []DocxSegment{
+		{Text: "第一行\n第二行"},
 	}
 	assertSegments(t, segs, want)
 }
 
-func assertSegments(t *testing.T, got, want []docxSegment) {
+func assertSegments(t *testing.T, got, want []DocxSegment) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("segment count = %d, want %d:\n got: %+v\nwant: %+v", len(got), len(want), got, want)

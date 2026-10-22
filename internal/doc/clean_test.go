@@ -1,4 +1,4 @@
-package pdfconv
+package doc
 
 import (
 	"testing"
@@ -92,9 +92,9 @@ func TestCleanOCRLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := cleanOCRLine(tt.input)
+			got := CleanOCRLine(tt.input)
 			if got != tt.want {
-				t.Errorf("cleanOCRLine(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("CleanOCRLine(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -162,9 +162,9 @@ func TestFindHotwordInString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := findHotwordInString(tt.text, tt.hotword, box)
+			results := FindHotwordInString(tt.text, tt.hotword, box)
 			if len(results) != tt.want {
-				t.Errorf("findHotwordInString(%q, %q) match count = %d, want %d",
+				t.Errorf("FindHotwordInString(%q, %q) match count = %d, want %d",
 					tt.text, tt.hotword, len(results), tt.want)
 			}
 		})

@@ -41,7 +41,8 @@ import (
 	"syscall"
 	"time"
 
-	"docutil/internal/pdfconv"
+	"docutil/internal/doc"
+	"docutil/internal/pdf"
 )
 
 // serverVersion is reported in the initialize response's serverInfo.
@@ -321,12 +322,12 @@ func handleToolsCall(ctx context.Context, req rpcRequest) rpcResponse {
 		return toolError(req.ID, "invalid tools/call params: "+err.Error())
 	}
 
-	var mode pdfconv.ConvertMode
+	var mode doc.ConvertMode
 	switch params.Name {
 	case "convert_pdf_to_docx_image":
-		mode = pdfconv.ModeImage
+		mode = doc.ModeImage
 	case "convert_pdf_to_docx_text":
-		mode = pdfconv.ModeText
+		mode = doc.ModeText
 	default:
 		return toolError(req.ID, "unknown tool: "+params.Name)
 	}
@@ -371,7 +372,7 @@ func toolError(id json.RawMessage, msg string) rpcResponse {
 
 // convert resolves the input PDF, runs the conversion, and returns a JSON
 // payload describing the result (either an output_path or base64 file_data).
-func convert(ctx context.Context, mode pdfconv.ConvertMode, args convertArgs) (string, error) {
+func convert(ctx context.Context, mode doc.ConvertMode, args convertArgs) (string, error) {
 	// Resolve input PDF to a temp file.
 	pdfTmp, err := os.CreateTemp("", "docutil-*.pdf")
 	if err != nil {
@@ -410,8 +411,8 @@ func convert(ctx context.Context, mode pdfconv.ConvertMode, args convertArgs) (s
 	}
 
 	// Convert.
-	hotwords := pdfconv.ParseHotwords(args.Hotwords)
-	docxPath, err := pdfconv.ConvertContext(ctx, pdfTmp.Name(), mode, hotwords, func(pct float64) {})
+	hotwords := doc.ParseHotwords(args.Hotwords)
+	docxPath, err := pdf.ConvertContext(ctx, pdfTmp.Name(), mode, hotwords, func(pct float64) {})
 	if err != nil {
 		return "", fmt.Errorf("convert: %w", err)
 	}
@@ -469,17 +470,17 @@ func copyFile(src string, dst *os.File) error {
 	return nil
 }
 
-func docxFilename(pdfName string, mode pdfconv.ConvertMode) string {
+func docxFilename(pdfName string, mode doc.ConvertMode) string {
 	ext := filepath.Ext(pdfName)
 	base := pdfName[:len(pdfName)-len(ext)]
-	if mode == pdfconv.ModeText {
+	if mode == doc.ModeText {
 		return base + ".text.docx"
 	}
 	return base + ".docx"
 }
 
-func modeLabel(mode pdfconv.ConvertMode) string {
-	if mode == pdfconv.ModeText {
+func modeLabel(mode doc.ConvertMode) string {
+	if mode == doc.ModeText {
 		return "text"
 	}
 	return "image"

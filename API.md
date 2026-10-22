@@ -2,12 +2,13 @@
 
 ## 概述
 
-HTTP 服务，接收 PDF / DOCX / .doc 文件，返回转换结果。提供三种能力：
+HTTP 服务，接收 PDF / DOCX / .doc 文件，返回转换结果。提供四种能力：
 
 | 端点 | 模式 | 产出 | 输入格式 |
 |------|------|------|----------|
 | `/convert/image` | 截图版 | `.docx` | PDF |
 | `/convert/text` | 文字版 | `.text.docx` | PDF |
+| `/convert/doc` | .doc 转换 | `.docx` | .doc (OLE2) |
 | `/extract/txt` | 纯文本 | JSON | PDF / DOCX / .doc |
 
 ---
@@ -113,7 +114,39 @@ Content-Disposition: attachment; filename="xxx.text.docx"
 
 ---
 
-### 4. 纯文本提取
+### 4. .doc 转 .docx
+
+```
+POST /convert/doc
+Content-Type: multipart/form-data
+```
+
+接收旧版 Word `.doc`（OLE2 Compound Document）文件，通过 LibreOffice headless 转换为 `.docx` 并返回。
+
+**请求**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | file | 是 | 要转换的 `.doc` 文件（仅接受 OLE2 magic bytes `D0 CF 11 E0`），最大 64 MB |
+
+**成功响应**
+
+```
+200 OK
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+Content-Disposition: attachment; filename="xxx.docx"
+
+<DOCX 二进制流>
+```
+
+**说明**：
+- 依赖 `libreoffice-writer-nogui`（Docker server 镜像已内置）；LibreOffice 未安装时返回 500。
+- 单次转换超时 60 秒。
+- 非 OLE2 文件（如 PDF、DOCX）返回 400。
+
+---
+
+### 5. 纯文本提取
 
 ```
 POST /extract/txt
@@ -240,6 +273,15 @@ curl -X POST -k --noproxy "*" https://localhost:8443/convert/image \
 curl -X POST -k --noproxy "*" https://localhost:8443/convert/text \
   -F "file=@input.pdf" \
   -o output.text.docx -w'\n'
+```
+
+### .doc 转换
+
+```bash
+# 将旧版 .doc 转为 .docx
+curl -X POST -k --noproxy "*" https://localhost:8443/convert/doc \
+  -F "file=@document.doc" \
+  -o output.docx -w'\n'
 ```
 
 ### 纯文本提取

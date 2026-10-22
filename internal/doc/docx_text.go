@@ -1,4 +1,4 @@
-package pdfconv
+package doc
 
 import (
 	"archive/zip"
@@ -9,18 +9,18 @@ import (
 	"strings"
 )
 
-// textDocxBuilder packs recognized text into a minimal .docx with
+// TextDocxBuilder packs recognized text into a minimal .docx with
 // one paragraph per text line and a page break between pages.
-type textDocxBuilder struct {
+type TextDocxBuilder struct {
 	pages [][]string // each page is a list of text lines
 }
 
-// addPage appends a page of recognized text lines.
-func (b *textDocxBuilder) addPage(lines []string) {
+// AddPage appends a page of recognized text lines.
+func (b *TextDocxBuilder) AddPage(lines []string) {
 	b.pages = append(b.pages, lines)
 }
 
-func (b *textDocxBuilder) writeTo(w io.Writer) error {
+func (b *TextDocxBuilder) writeTo(w io.Writer) error {
 	zw := zip.NewWriter(w)
 
 	if err := writeFile(zw, "[Content_Types].xml", textContentTypesXML); err != nil {
@@ -38,7 +38,7 @@ func (b *textDocxBuilder) writeTo(w io.Writer) error {
 	return zw.Close()
 }
 
-func (b *textDocxBuilder) buildDocumentXML() string {
+func (b *TextDocxBuilder) buildDocumentXML() string {
 	var sb strings.Builder
 	sb.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
 	sb.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` + "\n")
@@ -86,8 +86,8 @@ const textDocRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 </Relationships>`
 
-// saveTextDocx saves the text builder to a file.
-func saveTextDocx(path string, b *textDocxBuilder) error {
+// SaveTextDocx saves the text builder to a file.
+func SaveTextDocx(path string, b *TextDocxBuilder) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create docx: %w", err)

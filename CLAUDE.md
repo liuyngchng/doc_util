@@ -29,7 +29,8 @@
 ## 代码结构
 
 - `internal/ocr/` — PaddleOCR 推理（检测 DB-Net + 识别 CRNN，CTC 解码），全部 CGO。
-- `internal/pdfconv/` — PDF → 图片 → DOCX 主流程；`convert.go` 里的 `cleanOCRLine`
+- `internal/pdf/` — PDF 特定逻辑（go-fitz），调用 `internal/doc` 做 DOCX 输出和文本提取
+- `internal/doc/` — 文档格式转换（DOCX builder、DOCX/.doc 文本提取、.doc→DOCX、图片→DOCX、OCR 工具函数、共享类型）；`ocr.go` 里的 `cleanOCRLine`
   负责清洗 OCR 文本（去掉 `'` 分隔符、CJK 字符之间的 `-`/空格等 artifacts）。
 - `models/rec/inference.yml` 的 `PostProcess.character_dict` 是识别模型的字符表
   （首个字符 `'` 是 PP-OCR 的占位/分隔符）。

@@ -19,8 +19,9 @@ import (
 
 	"github.com/go-gl/glfw/v3.4/glfw"
 
+	"docutil/internal/doc"
 	"docutil/internal/ocr"
-	"docutil/internal/pdfconv"
+	"docutil/internal/pdf"
 )
 
 type pdfFile struct {
@@ -219,7 +220,7 @@ func main() {
 		}
 
 		// Check: image files + hotwords + no OCR model → warn the user.
-		hotwords := pdfconv.ParseHotwords(hotwordsEntry.Text)
+		hotwords := doc.ParseHotwords(hotwordsEntry.Text)
 		if len(hotwords) > 0 && !modelsExist {
 			hasImage := false
 			for _, f := range files {
@@ -268,15 +269,15 @@ func main() {
 				if wantScreenshot {
 					var err error
 					if len(hotwords) > 0 && isPDF(f.path) {
-						_, err = pdfconv.ConvertWithHotwords(f.path, pdfconv.ModeImage, hotwords, func(pct float64) {
+						_, err = pdf.ConvertWithHotwords(f.path, doc.ModeImage, hotwords, func(pct float64) {
 							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 						})
 					} else if len(hotwords) > 0 && !isPDF(f.path) {
-						_, err = pdfconv.ConvertImageWithHotwords(f.path, pdfconv.ModeImage, hotwords, func(pct float64) {
+						_, err = doc.ConvertImageWithHotwords(f.path, doc.ModeImage, hotwords, func(pct float64) {
 							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 						})
 					} else {
-						_, err = pdfconv.Convert(f.path, pdfconv.ModeImage, func(pct float64) {
+						_, err = pdf.Convert(f.path, doc.ModeImage, func(pct float64) {
 							fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 						})
 					}
@@ -289,7 +290,7 @@ func main() {
 
 				// Text mode — extract / OCR.
 				if wantText {
-					if _, err := pdfconv.Convert(f.path, pdfconv.ModeText, func(pct float64) {
+					if _, err := pdf.Convert(f.path, doc.ModeText, func(pct float64) {
 						fyne.Do(func() { progressBar.SetValue(baseProgress + pct/float64(total)) })
 					}); err != nil {
 						fyne.Do(func() {

@@ -4,10 +4,11 @@
 //
 //	./build_server.sh
 //
-// The server exposes three endpoints:
+// The server exposes four endpoints:
 //
 //	POST /convert/image  → screenshot DOCX (always works)
 //	POST /convert/text   → text-layer DOCX (extract text for native PDFs, OCR for scans)
+//	POST /convert/doc    → .doc to .docx conversion (via LibreOffice)
 //	POST /extract/txt    → plain text string (PDF or DOCX input; OCR for image-only content)
 package main
 
@@ -25,8 +26,9 @@ import (
 	"syscall"
 	"time"
 
+	"docutil/internal/doc"
 	"docutil/internal/ocr"
-	"docutil/internal/pdfconv"
+	"docutil/internal/pdf"
 )
 
 func main() {
@@ -78,6 +80,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /convert/image", limit(maxConcurrent, handleConvertImage))
 	mux.HandleFunc("POST /convert/text", limit(maxConcurrent, handleConvertText))
+	mux.HandleFunc("POST /convert/doc", limit(maxConcurrent, handleConvertDoc))
 	mux.HandleFunc("POST /extract/txt", limit(maxConcurrent, handleExtractTxt))
 	mux.HandleFunc("GET /health", handleHealth)
 
@@ -204,14 +207,67 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConvertImage(w http.ResponseWriter, r *http.Request) {
-	hotwords := pdfconv.ParseHotwords(r.FormValue("hotwords"))
+	hotwords := doc.ParseHotwords(r.FormValue("hotwords"))
 	slog.Info("conversion started with hotwords", "hotwords_count", len(hotwords), "hotwords", hotwords)
-	convertAndServe(w, r, pdfconv.ModeImage, hotwords)
+	convertAndServe(w, r, doc.ModeImage, hotwords)
 }
 
 func handleConvertText(w http.ResponseWriter, r *http.Request) {
 	slog.Info("text conversion started")
-	convertAndServe(w, r, pdfconv.ModeText, nil)
+	convertAndServe(w, r, doc.ModeText, nil)
+}
+
+func handleConvertDoc(w http.ResponseWriter, r *http.Request) {
+	docTmp, headerFilename, err := saveUpload(w, r)
+	if err != nil {
+		return
+	}
+	defer os.Remove(docTmp)
+
+	// Validate file type: only OLE2 (.doc) files accepted.
+	if !doc.IsOLE2File(docTmp) {
+		slog.Warn("unsupported file type for /convert/doc", "filename", headerFilename)
+		http.Error(w, "unsupported file type: only .doc (OLE2) files are accepted for /convert/doc", http.StatusBadRequest)
+		return
+	}
+
+	slog.Info("doc conversion started", "filename", headerFilename)
+
+	start := time.Now()
+	docxPath, cleanup, err := doc.ConvertOLE2ToDocx(docTmp)
+	if err != nil {
+		slog.Error("doc conversion failed",
+			"filename", headerFilename,
+			"error", err,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+		http.Error(w, fmt.Sprintf("conversion failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer cleanup()
+	defer os.Remove(docxPath)
+
+	slog.Info("doc conversion done",
+		"filename", headerFilename,
+		"output", filepath.Base(docxPath),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+
+	// Stream the generated .docx back.
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, docxFilename(headerFilename, doc.ModeImage)))
+
+	docxF, err := os.Open(docxPath)
+	if err != nil {
+		slog.Error("open result failed", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer docxF.Close()
+
+	if _, err := io.Copy(w, docxF); err != nil {
+		slog.Warn("stream response interrupted", "error", err)
+	}
 }
 
 func handleExtractTxt(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +280,7 @@ func handleExtractTxt(w http.ResponseWriter, r *http.Request) {
 	slog.Info("extract text started", "filename", filename)
 
 	start := time.Now()
-	result, err := pdfconv.ExtractText(pdfTmp)
+	result, err := pdf.ExtractText(pdfTmp)
 	if err != nil {
 		slog.Error("extract text failed",
 			"filename", filename,
@@ -246,7 +302,7 @@ func handleExtractTxt(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.ConvertMode, hotwords []string) {
+func convertAndServe(w http.ResponseWriter, r *http.Request, mode doc.ConvertMode, hotwords []string) {
 	pdfTmp, headerFilename, err := saveUpload(w, r)
 	if err != nil {
 		return
@@ -268,10 +324,10 @@ func convertAndServe(w http.ResponseWriter, r *http.Request, mode pdfconv.Conver
 	// Convert.
 	convStart := time.Now()
 	var docxPath string
-	if len(hotwords) > 0 && mode == pdfconv.ModeImage {
-		docxPath, err = pdfconv.ConvertWithHotwords(pdfTmp, mode, hotwords, func(pct float64) {})
+	if len(hotwords) > 0 && mode == doc.ModeImage {
+		docxPath, err = pdf.ConvertWithHotwords(pdfTmp, mode, hotwords, func(pct float64) {})
 	} else {
-		docxPath, err = pdfconv.Convert(pdfTmp, mode, func(pct float64) {})
+		docxPath, err = pdf.Convert(pdfTmp, mode, func(pct float64) {})
 	}
 	convDuration := time.Since(convStart)
 
@@ -376,10 +432,10 @@ func isPDFFile(path string) bool {
 	return magic[0] == '%' && magic[1] == 'P' && magic[2] == 'D' && magic[3] == 'F'
 }
 
-func docxFilename(pdfName string, mode pdfconv.ConvertMode) string {
+func docxFilename(pdfName string, mode doc.ConvertMode) string {
 	ext := filepath.Ext(pdfName)
 	base := pdfName[:len(pdfName)-len(ext)]
-	if mode == pdfconv.ModeText {
+	if mode == doc.ModeText {
 		return base + ".text.docx"
 	}
 	return base + ".docx"

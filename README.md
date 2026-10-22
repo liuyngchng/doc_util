@@ -303,11 +303,15 @@ docutil/
 │   ├── server/main.go          # HTTP 服务端
 │   └── mcp/main.go             # MCP 服务端（stdio JSON-RPC）
 ├── internal/
-│   ├── pdfconv/
-│   │   ├── convert.go          # PDF → 图片 → docx 主流程（含 OCR 集成）
-│   │   ├── extract.go           # PDF / DOCX → 纯文本提取（含置信度）
+│   ├── pdf/
+│   │   ├── convert.go          # PDF → DOCX（图片/文字模式，含 OCR 集成）
+│   │   └── extract.go          # PDF → 纯文本提取
+│   ├── doc/
+│   │   ├── convert.go          # 图片 → DOCX、热词标注、路径生成
+│   │   ├── extract.go          # DOCX/.doc → 纯文本提取（含置信度）、.doc→DOCX
 │   │   ├── docx.go             # 手写 OOXML 打包（截图版）
-│   │   └── docx_text.go        # 手写 OOXML 打包（OCR 文字版）
+│   │   ├── docx_text.go        # 手写 OOXML 打包（OCR 文字版）
+│   │   └── ocr.go              # OCR 引擎、印章检测、文本清洗
 │   └── ocr/
 │       ├── types.go            # 基础类型（OCRBox / TextLine / PageText）
 │       ├── model_config.go     # 解析 inference.yml 字符表 + CheckModels()

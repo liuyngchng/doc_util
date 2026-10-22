@@ -1,4 +1,4 @@
-package pdfconv
+package doc
 
 import (
 	"archive/zip"
@@ -10,25 +10,26 @@ import (
 	"strings"
 )
 
-// docxBuilder packs images into a minimal .docx (OOXML) file.
+// DocxBuilder packs images into a minimal .docx (OOXML) file.
 // Each image goes on its own page (page break between images).
-type docxBuilder struct {
-	images []docxImage
+type DocxBuilder struct {
+	images []DocxImage
 }
 
-type docxImage struct {
-	data   []byte // JPEG bytes
-	width  int    // pixels
-	height int    // pixels
+// DocxImage is a single JPEG page to embed in the DOCX.
+type DocxImage struct {
+	Data   []byte // JPEG bytes
+	Width  int    // pixels
+	Height int    // pixels
 }
 
-// add adds a JPEG page.
-func (b *docxBuilder) add(jpg []byte, w, h int) {
-	b.images = append(b.images, docxImage{data: jpg, width: w, height: h})
+// Add adds a JPEG page.
+func (b *DocxBuilder) Add(jpg []byte, w, h int) {
+	b.images = append(b.images, DocxImage{Data: jpg, Width: w, Height: h})
 }
 
 // writeTo writes the .docx file.
-func (b *docxBuilder) writeTo(w io.Writer) error {
+func (b *DocxBuilder) writeTo(w io.Writer) error {
 	zw := zip.NewWriter(w)
 
 	if err := writeFile(zw, "[Content_Types].xml", contentTypesXML); err != nil {
@@ -49,7 +50,7 @@ func (b *docxBuilder) writeTo(w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err := w.Write(img.data); err != nil {
+		if _, err := w.Write(img.Data); err != nil {
 			return err
 		}
 	}
@@ -99,7 +100,7 @@ func pxToEMU(px int) int {
 	return px * 9525
 }
 
-func buildDocumentXML(images []docxImage) string {
+func buildDocumentXML(images []DocxImage) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
 	b.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`)
@@ -111,8 +112,8 @@ func buildDocumentXML(images []docxImage) string {
 
 	for i, img := range images {
 		rID := i + 1
-		cx := pxToEMU(img.width)
-		cy := pxToEMU(img.height)
+		cx := pxToEMU(img.Width)
+		cy := pxToEMU(img.Height)
 		maxCX := pxToEMU(718)
 		maxCY := pxToEMU(1010)
 
@@ -170,8 +171,8 @@ func buildDocumentXML(images []docxImage) string {
 	return b.String()
 }
 
-// saveDocx saves to a file path using a bufio.Writer.
-func saveDocx(path string, b *docxBuilder) error {
+// SaveDocx saves the builder to a file path using a bufio.Writer.
+func SaveDocx(path string, b *DocxBuilder) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create docx: %w", err)
