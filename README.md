@@ -30,13 +30,13 @@ OCR 版启动后，如果 GUI 检测到 `models/` 目录（含 `det/inference.on
 ### 前置条件
 
 - Docker（编译环境全部容器化，本机无需 Go）
-- Go 工具链 tarball：放到 `build/deps/go1.24.13.linux-amd64.tar.gz`（`scripts/build_cli.sh` 首次会自动下载）
+- Go 工具链 tarball：放到 `dist/cache/deps/go1.24.13.linux-amd64.tar.gz`（`build/build_cli.sh` 首次会自动下载）
 
 ### 一键编译
 
 ```bash
 # 默认构建（Linux OCR 版 + Windows 交叉编译）
-./scripts/build_cli.sh
+./build/build_cli.sh
 ```
 
 产出 `dist/` 下：
@@ -48,9 +48,9 @@ OCR 版启动后，如果 GUI 检测到 `models/` 目录（含 `det/inference.on
 | `libonnxruntime.so` | Linux amd64 | ONNX Runtime 运行时（OCR 版附带） |
 | `models/` | — | OCR 模型目录（OCR 版附带） |
 
-Server 版通过 `./scripts/build_server.sh` 构建生产 Docker 镜像 `docutil-server:latest`。
+Server 版通过 `./build/build_server.sh` 构建生产 Docker 镜像 `docutil-server:latest`。
 
-MCP Server 版通过 `./scripts/build_mcp.sh` 构建生产 Docker 镜像 `docutil-mcp:latest`。
+MCP Server 版通过 `./build/build_mcp.sh` 构建生产 Docker 镜像 `docutil-mcp:latest`。
 
 Linux 构建始终集成 OCR（OpenCV + ONNX Runtime），产出含 .so 库和 models/ 的完整包。
 Windows 交叉编译使用 `-tags noocr`（不支持 Windows OCR 交叉编译），但 MuPDF 文本提取始终可用，
@@ -73,10 +73,10 @@ pacman -Su
 然后**在 cmd 或 PowerShell 中**（不需要从 MSYS2 终端启动）运行：
 
 ```cmd
-scripts\build.bat
+build\build.bat
 
-# 如果连网需要代理， 则执行如下命令,例如 scripts\build.bat --proxy http://123.456.789:8080
-scripts\build.bat --proxy http://your_proxoy_host:your_proxy_port
+# 如果连网需要代理， 则执行如下命令,例如 build\build.bat --proxy http://123.456.789:8080
+build\build.bat --proxy http://your_proxoy_host:your_proxy_port
 ```
 
 产出 `dist\docutil-windows-amd64-ocr.zip`，包含：
@@ -93,13 +93,13 @@ scripts\build.bat --proxy http://your_proxoy_host:your_proxy_port
 构建默认使用 [garble](https://github.com/burrowers/garble) 对 Windows 交叉编译的模块内代码做符号名和字符串字面量混淆（依赖不变）。Linux OCR 构建不使用 garble（CGO/OCR 与 garble 不兼容）。如果不需要混淆：
 
 ```bash
-./scripts/build_cli.sh --no-obfuscate
+./build/build_cli.sh --no-obfuscate
 ```
 
 通过代理访问外网：
 
 ```bash
-./scripts/build_cli.sh http_proxy=http://proxy:8080 https_proxy=http://proxy:8080
+./build/build_cli.sh http_proxy=http://proxy:8080 https_proxy=http://proxy:8080
 ```
 
 ### Server 编译
@@ -116,10 +116,14 @@ Server：
 
 ```bash
 # 构建生产 Docker 镜像（始终带 OCR）
-./scripts/build_server.sh
+./build/build_server.sh
 
 # 构建 MCP Server Docker 镜像（始终带 OCR）
-./scripts/build_mcp.sh
+./build/build_mcp.sh
+
+# 部署（镜像需已构建）
+./build/deploy.sh        # server（默认）
+./build/deploy.sh mcp    # mcp
 ```
 
 ## 开发环境搭建
@@ -128,10 +132,10 @@ Server：
 
 ```bash
 # 首次：构建开发镜像
-docker build -t docutil_build:latest -f scripts/Dockerfile .
+docker build -t docutil_build:latest -f build/Dockerfile .
 
 # 进入开发容器
-./scripts/dev.sh
+./build/dev.sh
 
 # 容器内可执行：
 go build ./internal/ocr/          # 编译 OCR 包
@@ -143,7 +147,7 @@ go vet ./internal/...             # 静态检查
 
 | 组件 | 版本 | 来源 |
 |------|------|------|
-| ONNX Runtime | 1.27.1 | `build/deps/onnxruntime/`（已 vendor 头文件 + libonnxruntime.so） |
+| ONNX Runtime | 1.27.1 | `dist/cache/deps/onnxruntime/`（已 vendor 头文件 + libonnxruntime.so） |
 | OpenCV | 4.6 | `apt-get install libopencv-dev`（Dockerfile 自动安装） |
 | Go | 1.24.13 | 基础镜像预装 |
 
@@ -271,7 +275,7 @@ ubuntu:24.04
                CC=x86_64-w64-mingw32-gcc  → docutil.exe（PE32+）
                （Windows 版使用 -tags noocr，无 OCR，但含 MuPDF 文本提取）
 
-Windows OCR 版需在 Windows 上通过 scripts/build.bat 使用 MSYS2 MinGW-w64 原生编译：
+Windows OCR 版需在 Windows 上通过 build/build.bat 使用 MSYS2 MinGW-w64 原生编译：
   MSYS2 UCRT64 (Windows)
     ├─ pacman 安装 mingw-w64-ucrt-x86_64-go/gcc/opencv
     ├─ 下载 onnxruntime Windows 预编译包 → gendef + dlltool 生成 MinGW 导入库
@@ -287,7 +291,7 @@ MuPDF 静态库由 go-fitz 内置提供（libmupdf_linux_amd64.a / libmupdf_wind
 ```
 docutil/
 ├── main.go                     # Fyne GUI 入口
-├── scripts/
+├── build/
 │   ├── Dockerfile              # 编译镜像（ubuntu:24.04 + Go + OpenCV + ONNX Runtime）
 │   ├── Dockerfile.server       # Server 生产镜像
 │   ├── Dockerfile.mcp          # MCP Server 生产镜像
@@ -296,7 +300,8 @@ docutil/
 │   ├── build.bat               # Windows OCR 版编译（MSYS2 MinGW-w64 原生编译）
 │   ├── build_server.sh         # Server 一键编译
 │   ├── build_mcp.sh            # MCP Server 一键编译
-│   └── collect_dlls.sh         # Windows DLL 收集（被 build.bat 调用）
+│   ├── deploy.sh                # 一键构建+部署+跟踪日志
+	│   └── collect_dlls.sh         # Windows DLL 收集（被 build.bat 调用）
 ├── go.mod / go.sum
 ├── cmd/
 │   ├── cli/main.go             # 纯 Go 命令行版本
@@ -326,7 +331,7 @@ docutil/
 │       ├── postprocess_ctc.go  # CTC 贪心解码
 │       ├── box_sort.go         # 阅读顺序排列
 │       └── stub.go             # 无 CGO 时的桩实现
-└── build/
+└── dist/cache/
     ├── deps/
     │   ├── go1.24.13.linux-amd64.tar.gz   # Go toolchain（build_cli.sh 缓存）
     │   └── onnxruntime/                    # 已 vendor

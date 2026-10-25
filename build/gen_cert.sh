@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 生成自签名证书，供 docutil-server 的 HTTPS 使用。
-#   ./scripts/gen_cert.sh [证书输出目录]
+#   ./build/gen_cert.sh [证书输出目录]
 #
 # 默认输出到 certs/cert.pem + certs/key.pem。
 # 生成 10 年有效期的 RSA-2048 自签名证书，CN 设为 localhost（含 SAN）。

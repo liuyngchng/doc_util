@@ -10,7 +10,7 @@ IMAGE="docutil_build:latest"
 # ── Usage ───────────────────────────────────────────────────────
 usage() {
   cat <<'EOF'
-用法: ./scripts/dev.sh [代理参数...]
+用法: ./build/dev.sh [代理参数...]
 
 启动 OCR 开发容器（交互式 bash），挂载项目目录到 /workspace。
 
@@ -20,8 +20,8 @@ usage() {
   no_proxy=<url>          设置不走代理的地址列表
 
 示例:
-  ./scripts/dev.sh
-  ./scripts/dev.sh http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
+  ./build/dev.sh
+  ./build/dev.sh http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
 EOF
 }
 
@@ -72,7 +72,7 @@ if [[ -t 1 ]]; then
 fi
 
 # ── ONNX Runtime SDK (download if missing; uses proxy env) ───────
-"$SCRIPT_DIR/scripts/ensure_onnxruntime.sh" \
+"$SCRIPT_DIR/build/ensure_onnxruntime.sh" \
   ${HTTP_PROXY_VAL:+"http_proxy=$HTTP_PROXY_VAL"} \
   ${HTTPS_PROXY_VAL:+"https_proxy=$HTTPS_PROXY_VAL"} \
   ${NO_PROXY_VAL:+"no_proxy=$NO_PROXY_VAL"}
@@ -80,17 +80,17 @@ fi
 # Build dev image if not present
 if ! docker image inspect "$IMAGE" &>/dev/null; then
   echo "Building dev image $IMAGE ..."
-  docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t "$IMAGE" -f scripts/Dockerfile .
+  docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t "$IMAGE" -f build/Dockerfile .
   echo "Done."
 fi
 
-GOCACHE_DIR="$SCRIPT_DIR/build/gocache_dev"
-GOMODCACHE_DIR="$SCRIPT_DIR/build/gomodcache"
+GOCACHE_DIR="$SCRIPT_DIR/dist/cache/gocache_dev"
+GOMODCACHE_DIR="$SCRIPT_DIR/dist/cache/gomodcache"
 mkdir -p "$GOCACHE_DIR" "$GOMODCACHE_DIR"
 
 echo "Starting dev container. Use 'go build' or 'go test' inside."
-echo "  CGO LDFLAGS:  -L/workspace/build/deps/onnxruntime/lib -lonnxruntime"
-echo "  CGO CFLAGS:   -I/workspace/build/deps/onnxruntime/include"
+echo "  CGO LDFLAGS:  -L/workspace/dist/cache/deps/onnxruntime/lib -lonnxruntime"
+echo "  CGO CFLAGS:   -I/workspace/dist/cache/deps/onnxruntime/include"
 echo "  OpenCV:       pkg-config --cflags --libs opencv4"
 echo ""
 

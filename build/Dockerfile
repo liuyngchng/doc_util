@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Go toolchain (from host-cached tarball) ──────────────────────
 ARG GO_VERSION=1.24.13
-COPY build/deps/go${GO_VERSION}.linux-amd64.tar.gz /tmp/go.tar.gz
+COPY dist/cache/deps/go${GO_VERSION}.linux-amd64.tar.gz /tmp/go.tar.gz
 RUN tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 
 ENV PATH="/usr/local/go/bin:${PATH}"

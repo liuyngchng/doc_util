@@ -20,9 +20,9 @@
 .DS_Store
 
 # 编译缓存（体积大，运行期通过 -v 挂载或镜像内重建）
-build/gocache
-build/gocache_dev
-build/gomodcache
+dist/cache/gocache
+dist/cache/gocache_dev
+dist/cache/gomodcache
 
 # 自签名证书源（构建脚本会先复制到 dist/ 再进镜像）
 certs
@@ -44,4 +44,4 @@ CLAUDE.md
 
 # 旧的 GUI 构建脚本（server 用不到）
 build.sh
-scripts/build.bat
+build/build.bat

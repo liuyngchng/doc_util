@@ -3,14 +3,14 @@ set -euo pipefail
 
 # ────────────────────────────────────────────────────────────────
 # Build the GUI client binaries (Linux + Windows).
-#   ./scripts/build_cli.sh                 # Linux GUI with OCR
+#   ./build/build_cli.sh                 # Linux GUI with OCR
 #
 # Linux binary is built with full OCR support (OpenCV + ONNX Runtime).
 # Windows cross-compile uses -tags noocr (no OpenCV cross-link), but
 # MuPDF text extraction is always available for text-mode DOCX output.
 #
 # Windows native OCR build must be done on Windows:
-#   scripts/build.bat    (requires MSYS2 UCRT64)
+#   build/build.bat    (requires MSYS2 UCRT64)
 # ────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,7 +19,7 @@ IMAGE="docutil_build:latest"
 # ── Usage ───────────────────────────────────────────────────────
 usage() {
   cat <<'EOF'
-用法: ./scripts/build_cli.sh [参数...]
+用法: ./build/build_cli.sh [参数...]
 
 参数说明:
   --no-obfuscate          关闭 Windows 构建的 garble 代码混淆（默认开启）
@@ -32,13 +32,13 @@ usage() {
   no_proxy=<url>          设置不走代理的地址列表
 
 示例:
-  ./scripts/build_cli.sh                  # 默认构建（Linux OCR + Windows 混淆）
-  ./scripts/build_cli.sh --no-obfuscate   # 不混淆 Windows 构建
+  ./build/build_cli.sh                  # 默认构建（Linux OCR + Windows 混淆）
+  ./build/build_cli.sh --no-obfuscate   # 不混淆 Windows 构建
 
 说明:
   Linux 构建始终集成 OCR（OpenCV + ONNX Runtime），产出含 .so + models 的完整包。
   Windows 交叉编译始终使用 -tags noocr（不支持 Windows OCR 交叉编译）。
-  Windows OCR 版本需在 Windows 上运行 scripts/build.bat 编译（需要 MSYS2 UCRT64）。
+  Windows OCR 版本需在 Windows 上运行 build/build.bat 编译（需要 MSYS2 UCRT64）。
 EOF
 }
 
@@ -106,18 +106,18 @@ if ! command -v docker &>/dev/null; then
 fi
 
 # ── Cache directories (mapped as volumes for speed) ──────────────
-GOCACHE_DIR="$SCRIPT_DIR/build/gocache"
-GOMODCACHE_DIR="$SCRIPT_DIR/build/gomodcache"
+GOCACHE_DIR="$SCRIPT_DIR/dist/cache/gocache"
+GOMODCACHE_DIR="$SCRIPT_DIR/dist/cache/gomodcache"
 mkdir -p "$GOCACHE_DIR" "$GOMODCACHE_DIR" "$SCRIPT_DIR/dist"
 
 # ── ONNX Runtime SDK (download if missing; uses proxy env) ───────
-"$SCRIPT_DIR/scripts/ensure_onnxruntime.sh" \
+"$SCRIPT_DIR/build/ensure_onnxruntime.sh" \
   ${HTTP_PROXY_VAL:+"http_proxy=$HTTP_PROXY_VAL"} \
   ${HTTPS_PROXY_VAL:+"https_proxy=$HTTPS_PROXY_VAL"}
 
 # ── Go toolchain tarball (download if missing) ───────────────────
 GO_VERSION="1.24.13"
-GO_TARBALL="$SCRIPT_DIR/build/deps/go${GO_VERSION}.linux-amd64.tar.gz"
+GO_TARBALL="$SCRIPT_DIR/dist/cache/deps/go${GO_VERSION}.linux-amd64.tar.gz"
 GO_DOWNLOAD_URL="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 
 if [[ ! -f "$GO_TARBALL" ]]; then
@@ -139,7 +139,7 @@ fi
 # ── Build Docker image if missing ────────────────────────────────
 if ! docker image inspect "$IMAGE" &>/dev/null; then
   echo "Building Docker image $IMAGE ..."
-  docker build "${DOCKER_BUILD_ARGS[@]}" --build-arg "GO_VERSION=$GO_VERSION" -t "$IMAGE" -f scripts/Dockerfile .
+  docker build "${DOCKER_BUILD_ARGS[@]}" --build-arg "GO_VERSION=$GO_VERSION" -t "$IMAGE" -f build/Dockerfile .
   echo "Docker image $IMAGE built"
 else
   echo "Docker image $IMAGE ready"
@@ -188,7 +188,7 @@ docker run --rm \
 
 # ── Bundle OCR runtime deps ──────────────────────────────────────
 # Copy onnxruntime from vendored deps (preserve soname symlinks).
-cp -a "$SCRIPT_DIR/build/deps/onnxruntime/lib/libonnxruntime.so"* "$SCRIPT_DIR/dist/"
+cp -a "$SCRIPT_DIR/dist/cache/deps/onnxruntime/lib/libonnxruntime.so"* "$SCRIPT_DIR/dist/"
 echo "  bundled:  dist/libonnxruntime.so*"
 
 # Copy OpenCV shared libs + patchelf rpath from the build image.
@@ -285,4 +285,4 @@ echo "  dist/$ARCHIVE_WIN"
 echo ""
 echo "Linux OCR 包内容: docutil + .so 库 + models/ 模型目录"
 echo "解包后进入 docutil-linux-amd64/ 目录，运行 ./docutil 即可使用。"
-echo "Windows 包内容: docutil.exe（支持 MuPDF 文本提取，OCR 请用 scripts/build.bat 原生编译）"
+echo "Windows 包内容: docutil.exe（支持 MuPDF 文本提取，OCR 请用 build/build.bat 原生编译）"

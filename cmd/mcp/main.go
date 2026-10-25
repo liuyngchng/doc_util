@@ -4,7 +4,7 @@
 //
 // Build (Docker, with OCR):
 //
-//	./scripts/build_mcp.sh
+//	./build/build_mcp.sh
 //
 // Register in an MCP client (Claude Desktop's claude_desktop_config.json):
 //

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-# 脚本位于 scripts/ 目录，dist/ 与 build/ 在其上级项目根目录下
+# 脚本位于 build/ 目录，dist/ 与 dist/cache/ 在其上级项目根目录下
 cd "$(dirname "$0")/.."
 export PATH=/ucrt64/bin:$PATH
 
@@ -16,7 +16,7 @@ ldd "$exe_file" 2>/dev/null | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u |
 done
 
 # onnxruntime DLL
-ort_bin='build/deps/onnxruntime/win-x64/bin/onnxruntime.dll'
+ort_bin='dist/cache/deps/onnxruntime/win-x64/bin/onnxruntime.dll'
 if [ -f "$ort_bin" ]; then
     echo "    $ort_bin"
     cp "$ort_bin" "$pkg_dir/"

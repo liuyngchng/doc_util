@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ────────────────────────────────────────────────────────────────
-# Build the production Docker image for the headless HTTP server.
-#   ./scripts/build_server.sh
+# Build the production Docker image for the MCP server.
+#   ./build/build_mcp.sh
 #
-# The server binary is compiled inside the build container, then
+# The MCP server binary is compiled inside the build container, then
 # packaged into a slim production image (ubuntu:24.04 + OpenCV libs).
 # ────────────────────────────────────────────────────────────────
 
@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # ── Usage ───────────────────────────────────────────────────────
 usage() {
   cat <<'EOF'
-用法: ./scripts/build_server.sh [参数...]
+用法: ./build/build_mcp.sh [参数...]
 
 参数说明:
   -x | verbose            输出 go build 的详细编译日志（-x）
@@ -26,10 +26,10 @@ usage() {
   no_proxy=<url>          设置不走代理的地址列表
 
 示例:
-  ./scripts/build_server.sh http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
+  ./build/build_mcp.sh http_proxy=http://127.0.0.1:7890 https_proxy=http://127.0.0.1:7890
 
 说明:
-  直接构建生产 Docker 镜像 docutil-server:latest（Server 始终集成 OCR）。
+  直接构建生产 Docker 镜像 docutil-mcp:latest（MCP 始终集成 OCR）。
 EOF
 }
 
@@ -97,26 +97,26 @@ fi
 IMAGE="docutil_build:latest"
 if ! docker image inspect "$IMAGE" &>/dev/null; then
   echo "Building image $IMAGE ..."
-  docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t "$IMAGE" -f scripts/Dockerfile .
+  docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t "$IMAGE" -f build/Dockerfile .
   echo "Done."
 fi
 
 # ── Persistent Go caches ────────────────────────────────────────
-GOCACHE_DIR="$SCRIPT_DIR/build/gocache_dev"
-GOMODCACHE_DIR="$SCRIPT_DIR/build/gomodcache"
+GOCACHE_DIR="$SCRIPT_DIR/dist/cache/gocache_dev"
+GOMODCACHE_DIR="$SCRIPT_DIR/dist/cache/gomodcache"
 mkdir -p "$GOCACHE_DIR" "$GOMODCACHE_DIR" "$SCRIPT_DIR/dist"
 
 # ── ONNX Runtime SDK (download if missing; uses proxy env) ───────
-"$SCRIPT_DIR/scripts/ensure_onnxruntime.sh" \
+"$SCRIPT_DIR/build/ensure_onnxruntime.sh" \
   ${HTTP_PROXY_VAL:+"http_proxy=$HTTP_PROXY_VAL"} \
   ${HTTPS_PROXY_VAL:+"https_proxy=$HTTPS_PROXY_VAL"} \
   ${NO_PROXY_VAL:+"no_proxy=$NO_PROXY_VAL"}
 
-ONNXRT_LIB="$SCRIPT_DIR/build/deps/onnxruntime"
+ONNXRT_LIB="$SCRIPT_DIR/dist/cache/deps/onnxruntime"
 
 # ── 1. Build binary in build container ─────────────────────────
 echo ""
-echo "=== Step 1/2: Building docutil-server binary ==="
+echo "=== Step 1/2: Building docutil-mcp binary ==="
 docker run --rm \
   -v "$SCRIPT_DIR":/workspace \
   -v "$GOCACHE_DIR":/tmp/gocache \
@@ -128,18 +128,18 @@ docker run --rm \
   -e GOMODCACHE=/go/pkg/mod \
   -e GOPROXY="https://goproxy.cn,direct" \
   -e CGO_ENABLED=1 \
-  -e CGO_LDFLAGS="-L/workspace/build/deps/onnxruntime/lib -lonnxruntime" \
-  -e CGO_CFLAGS="-I/workspace/build/deps/onnxruntime/include" \
+  -e CGO_LDFLAGS="-L/workspace/dist/cache/deps/onnxruntime/lib -lonnxruntime" \
+  -e CGO_CFLAGS="-I/workspace/dist/cache/deps/onnxruntime/include" \
   -e GOOS=linux \
   -e GOARCH=amd64 \
   "$IMAGE" \
   bash -c "
-    rm -rf /workspace/dist/docutil-server
-    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w -r \$ORIGIN' -o dist/docutil-server ./cmd/server/ && \
+    rm -rf /workspace/dist/docutil-mcp
+    go build ${GO_BUILD_X} -mod=mod -ldflags='-s -w -r \$ORIGIN' -o dist/docutil-mcp ./cmd/mcp/ && \
     echo 'Build complete.'
   "
 
-echo "  dist/docutil-server ($(du -h "$SCRIPT_DIR/dist/docutil-server" | cut -f1))"
+echo "  dist/docutil-mcp ($(du -h "$SCRIPT_DIR/dist/docutil-mcp" | cut -f1))"
 
 # ── 2. Bundle deps + package Docker image ───────────────────────
 rm -rf "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
@@ -147,27 +147,21 @@ rm -rf "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
 cp -a "$ONNXRT_LIB/lib/libonnxruntime.so"* "$SCRIPT_DIR/dist/"
 cp -r "$SCRIPT_DIR/models" "$SCRIPT_DIR/dist/models"
 
-# Generate self-signed TLS certificate (idempotent: skips if already present).
-"$SCRIPT_DIR/scripts/gen_cert.sh"
-cp -a "$SCRIPT_DIR/certs/cert.pem" "$SCRIPT_DIR/certs/key.pem" "$SCRIPT_DIR/dist/"
-
 echo ""
-echo "=== Step 2/2: Building Docker image docutil-server:latest ==="
-docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t docutil-server:latest -f scripts/Dockerfile.server "$SCRIPT_DIR"
+echo "=== Step 2/2: Building Docker image docutil-mcp:latest ==="
+docker build "${DOCKER_BUILD_ARGS[@]+"${DOCKER_BUILD_ARGS[@]}"}" -t docutil-mcp:latest -f build/Dockerfile.mcp "$SCRIPT_DIR"
 
-# Clean up intermediate files from dist/ (keep certs/ as durable assets).
-rm -rf "$SCRIPT_DIR/dist/docutil-server" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models" "$SCRIPT_DIR"/dist/cert.pem "$SCRIPT_DIR"/dist/key.pem
+# Clean up intermediate files from dist/.
+rm -rf "$SCRIPT_DIR/dist/docutil-mcp" "$SCRIPT_DIR"/dist/libonnxruntime.so* "$SCRIPT_DIR/dist/models"
 
 echo ""
 echo "=== Done ==="
-echo "  Docker image: docutil-server:latest"
+echo "  Docker image: docutil-mcp:latest"
 echo ""
 echo "Run with:"
-echo "  docker run -d --rm --name docutil-server -p 20002:8080 \\"
-echo "    -v \$(pwd)/logs:/app/logs \\"
-echo "    docutil-server:latest"
-echo "  docker logs -f docutil-server"
+echo "  docker run -i --rm docutil-mcp:latest"
 echo ""
-echo "HTTPS enabled by default (self-signed cert for localhost)."
-echo "  Health check: curl -k https://localhost:20002/health"
-echo "  Logs on host:  cat logs/server.log"
+echo "Or register directly with an MCP client:"
+echo "  {"
+echo "    \"command\": \"/path/to/docutil-mcp\""
+echo "  }"
