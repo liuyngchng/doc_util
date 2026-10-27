@@ -25,8 +25,9 @@ FROM ubuntu:24.04
 ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
 ARG NO_PROXY=""
-ENV HTTP_PROXY="$HTTP_PROXY" HTTPS_PROXY="$HTTPS_PROXY" NO_PROXY="$NO_PROXY" \
-    http_proxy="$HTTP_PROXY" https_proxy="$HTTPS_PROXY" no_proxy="$NO_PROXY"
+
+# ARG values are only available during build-time RUN commands;
+# they are NOT persisted into the final image (no ENV for proxy).
 
 RUN if [ -n "$HTTP_PROXY" ]; then \
         echo "Acquire::http::Proxy \"$HTTP_PROXY\";" > /etc/apt/apt.conf.d/01proxy; \
@@ -41,7 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopencv-imgproc406t64 \
     libreoffice-writer-nogui \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/apt/apt.conf.d/01proxy
 
 WORKDIR /app
 
