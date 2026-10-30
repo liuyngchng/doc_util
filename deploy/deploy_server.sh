@@ -42,4 +42,14 @@ docker run -dit --name "$CONTAINER" \
 echo "容器 $CONTAINER 已启动"
 docker ps -a | grep "$CONTAINER" --color=always
 echo "部署完成"
+
+# 显示 llm_net 网络内的访问地址（容器名 = DNS 主机名）
+# 注意：TLS 默认启用（自签名证书），证书 SAN 为 localhost，其他容器需 --insecure
+echo -e "\n\033[1;31m══════════════════════════════════════════════════════════════\033[0m"
+echo -e "\033[1;31m  llm_net 网络内访问地址（同宿主机其他容器可用）：          \033[0m"
+echo -e "\033[1;31m      https://docutil-server:8080                           \033[0m"
+echo -e "\033[1;31m  注意：证书为自签名（SAN: localhost），客户端需 -k/--insecure\033[0m"
+echo -e "\033[1;31m      curl -k https://docutil-server:8080/health            \033[0m"
+echo -e "\033[1;31m══════════════════════════════════════════════════════════════\033[0m\n"
+
 docker logs -f "$CONTAINER"
