@@ -1,5 +1,5 @@
 # ================================================================
-# Production Docker image for the docutil HTTP server.
+# Production Docker image for the doc_util HTTP server.
 #
 # This image only packages a PRE-BUILT binary from dist/ — it does NOT
 # compile. Build the binary first (inside Docker) then build the image:
@@ -8,14 +8,14 @@
 #
 #   # or step by step:
 #   ./build/build_server.sh              # 1) build binary → dist/
-#   docker build -t docutil-server -f build/Dockerfile.server .
+#   docker build -t doc_util:$(cat VERSION) -f build/Dockerfile.server .
 #   #                                 2) package dist/ into image
 #
 # Run:
-#   docker run -d --rm --name docutil-server -p 8443:8080 \
+#   docker run -d --rm --name doc_util -p 8443:8080 \
 #     -v $(pwd)/logs:/app/logs \
-#     docutil-server
-#   docker logs -f docutil-server
+#     doc_util:$(cat VERSION)
+#   docker logs -f doc_util
 #   curl -k https://localhost:8443/health
 #   # logs are also on the host at ./logs/server.log
 # ================================================================
@@ -48,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Pre-built binary + ONNX Runtime shared lib + OCR models.
-COPY dist/docutil-server /app/docutil-server
+COPY dist/doc_util /app/doc_util
 COPY dist/libonnxruntime.so* /app/
 COPY dist/models /app/models
 
@@ -67,4 +67,4 @@ VOLUME ["/app/logs"]
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/docutil-server"]
+ENTRYPOINT ["/app/doc_util"]

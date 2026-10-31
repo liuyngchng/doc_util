@@ -48,9 +48,9 @@ OCR 版启动后，如果 GUI 检测到 `models/` 目录（含 `det/inference.on
 | `libonnxruntime.so` | Linux amd64 | ONNX Runtime 运行时（OCR 版附带） |
 | `models/` | — | OCR 模型目录（OCR 版附带） |
 
-Server 版通过 `./build/build_server.sh` 构建生产 Docker 镜像 `docutil-server:latest`。
+Server 版通过 `./build/build_server.sh` 构建生产 Docker 镜像 `doc_util:<版本号>`（版本号见 `VERSION` 文件）。
 
-MCP Server 版通过 `./build/build_mcp.sh` 构建生产 Docker 镜像 `docutil-mcp:latest`。
+MCP Server 版通过 `./build/build_mcp.sh` 构建生产 Docker 镜像 `doc_util-mcp:<版本号>`。
 
 Linux 构建始终集成 OCR（OpenCV + ONNX Runtime），产出含 .so 库和 models/ 的完整包。
 Windows 交叉编译使用 `-tags noocr`（不支持 Windows OCR 交叉编译），但 MuPDF 文本提取始终可用，
@@ -197,7 +197,7 @@ Server 提供三个接口，支持 PDF 和 DOCX 输入：
 
 ```bash
 # 启动服务
-PORT=8080 ./docutil-server
+PORT=8080 ./doc_util
 
 # 截图版 DOCX
 curl -X POST http://localhost:8080/convert/image \
@@ -243,7 +243,7 @@ Claude Desktop、Cline 等 MCP 客户端直接调用（让 LLM 直接转换 PDF�
 {
   "mcpServers": {
     "docutil": {
-      "command": "/path/to/docutil-mcp"
+      "command": "/path/to/doc_util-mcp"
     }
   }
 }
@@ -256,7 +256,7 @@ Claude Desktop、Cline 等 MCP 客户端直接调用（让 LLM 直接转换 PDF�
   "mcpServers": {
     "docutil": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "docutil-mcp:latest"]
+      "args": ["run", "-i", "--rm", "doc_util-mcp:1.0.0"]
     }
   }
 }
@@ -369,7 +369,7 @@ cd docutil-linux-amd64/
 直接运行 Docker 镜像：
 
 ```bash
-docker run -p 8080:8080 docutil-server:latest
+docker run -p 8080:8080 doc_util:1.0.0
 ```
 
 ### MCP Server
@@ -384,7 +384,7 @@ MCP Server 通过 stdio 通信，作为子进程被 MCP 客户端拉起，无需
    {
      "mcpServers": {
        "docutil": {
-         "command": "/path/to/docutil-mcp"
+         "command": "/path/to/doc_util-mcp"
        }
      }
    }
@@ -397,7 +397,7 @@ MCP Server 通过 stdio 通信，作为子进程被 MCP 客户端拉起，无需
      "mcpServers": {
        "docutil": {
          "command": "docker",
-         "args": ["run", "-i", "--rm", "-v", "/tmp:/tmp", "docutil-mcp:latest"]
+         "args": ["run", "-i", "--rm", "-v", "/tmp:/tmp", "doc_util-mcp:1.0.0"]
        }
      }
    }

@@ -4,7 +4,7 @@ set -euo pipefail
 # ────────────────────────────────────────────────────────────────
 # 部署 docutil MCP 服务，参考 llm_agent 的部署方式：
 #   - 复用虚拟网桥 llm_net，与其他 llm_agent 服务互通
-#   - 以容器名 docutil-mcp 注册到网桥，供网桥内其他容器访问
+#   - 以容器名 doc_util-mcp 注册到网桥，供网桥内其他容器访问
 #
 # 使用前先构建镜像：
 #   ./build/build_mcp.sh
@@ -16,9 +16,10 @@ set -euo pipefail
 # 这里提供常驻容器模式，暴露 TCP 端口供外部 MCP client 连接。
 # ────────────────────────────────────────────────────────────────
 
-CONTAINER="docutil-mcp"
-IMAGE="docutil-mcp:latest"
+CONTAINER="doc_util-mcp"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(cat "$SCRIPT_DIR/VERSION")"
+IMAGE="doc_util-mcp:$VERSION"
 
 # 确保镜像存在
 if ! docker image inspect "$IMAGE" &>/dev/null; then

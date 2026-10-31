@@ -29,6 +29,7 @@ import (
 	"docutil/internal/doc"
 	"docutil/internal/ocr"
 	"docutil/internal/pdf"
+	"docutil/internal/slogutil"
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 		}
 	}
 
-	slogger := slog.New(slog.NewTextHandler(io.MultiWriter(logWriters...), &slog.HandlerOptions{
+	slogger := slog.New(slogutil.NewHandler(io.MultiWriter(logWriters...), &slog.HandlerOptions{
 		Level: slogLevel(),
 	}))
 	slog.SetDefault(slogger)

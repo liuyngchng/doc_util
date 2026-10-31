@@ -25,8 +25,8 @@ case "$TARGET" in
   -h|--help|help)
     echo "用法: ./build/deploy.sh [server|mcp]"
     echo ""
-    echo "  server  部署 docutil-server（默认）"
-    echo "  mcp     部署 docutil-mcp"
+    echo "  server  部署 doc_util（默认）"
+    echo "  mcp     部署 doc_util-mcp"
     echo ""
     echo "部署前请先构建镜像："
     echo "  ./build/build_server.sh"

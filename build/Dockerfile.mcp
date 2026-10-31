@@ -7,14 +7,14 @@
 #   ./build/build_mcp.sh                  # builds binary + image in one go
 #
 # Run (note: stdin must be attached, and stdout is the JSON-RPC transport):
-#   docker run -i --rm docutil-mcp:latest
+#   docker run -i --rm doc_util-mcp:$(cat VERSION)
 #
 # Register in Claude Desktop's claude_desktop_config.json:
 #   {
 #     "mcpServers": {
 #       "docutil": {
 #         "command": "docker",
-#         "args": ["run", "-i", "--rm", "docutil-mcp:latest"]
+#         "args": ["run", "-i", "--rm", "doc_util-mcp:$(cat VERSION)"]
 #       }
 #     }
 #   }
@@ -48,10 +48,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Pre-built binary + ONNX Runtime shared lib + OCR models.
-COPY dist/docutil-mcp /app/docutil-mcp
+COPY dist/doc_util-mcp /app/doc_util-mcp
 COPY dist/libonnxruntime.so* /app/
 COPY dist/models /app/models
 
 ENV LOG_LEVEL=info
 
-ENTRYPOINT ["/app/docutil-mcp"]
+ENTRYPOINT ["/app/doc_util-mcp"]

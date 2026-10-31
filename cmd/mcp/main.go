@@ -11,7 +11,7 @@
 //	{
 //	  "mcpServers": {
 //	    "docutil": {
-//	      "command": "/path/to/docutil-mcp"
+//	      "command": "/path/to/doc_util-mcp"
 //	    }
 //	  }
 //	}
@@ -43,6 +43,7 @@ import (
 
 	"docutil/internal/doc"
 	"docutil/internal/pdf"
+	"docutil/internal/slogutil"
 )
 
 // serverVersion is reported in the initialize response's serverInfo.
@@ -56,7 +57,7 @@ const mcpProtocolVersion = "2024-11-05"
 const maxPDFBytes = 64 << 20
 
 func main() {
-	slogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	slogger := slog.New(slogutil.NewHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slogLevel(),
 	}))
 	slog.SetDefault(slogger)

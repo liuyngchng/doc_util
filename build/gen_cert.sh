@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成自签名证书，供 docutil-server 的 HTTPS 使用。
+# 生成自签名证书，供 doc_util 的 HTTPS 使用。
 #   ./build/gen_cert.sh [证书输出目录]
 #
 # 默认输出到 certs/cert.pem + certs/key.pem。
